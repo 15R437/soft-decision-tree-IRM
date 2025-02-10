@@ -14,10 +14,8 @@ class InnerNode():
     def __init__(self, depth, args):
         self.args = args
         self.fc = nn.Linear(self.args.input_dim, 1)
-        beta = torch.randn(1)
+        beta = torch.randn(1).to(self.args.device)
         #beta = beta.expand((self.args.batch_size, 1))
-        if self.args.cuda:
-            beta = beta.cuda()
         self.beta = nn.Parameter(beta)
         self.leaf = False
         self.prob = None
@@ -73,9 +71,7 @@ class InnerNode():
 class LeafNode():
     def __init__(self, args):
         self.args = args
-        self.param = torch.randn(self.args.output_dim)
-        if self.args.cuda:
-            self.param = self.param.cuda()
+        self.param = torch.randn(self.args.output_dim).to(self.args.device)
         self.param = nn.Parameter(self.param)
         self.leaf = True
         self.softmax = nn.Softmax()
@@ -106,13 +102,10 @@ class SoftDecisionTree(nn.Module):
         self.best_accuracy = 0.0
 
     def define_extras(self, batch_size):
-        ##define target_onehot and path_prob_init batch size, because these need to be defined according to batch size, which can be differ
+        ##define target_onehot and path_prob_init batch size, because these need to be defined according to batch size, which can differ
         self.target_onehot = torch.FloatTensor(batch_size, self.args.output_dim)
-        self.target_onehot = Variable(self.target_onehot)
-        self.path_prob_init = Variable(torch.ones(batch_size, 1))
-        if self.args.cuda:
-            self.target_onehot = self.target_onehot.cuda()
-            self.path_prob_init = self.path_prob_init.cuda()
+        self.target_onehot = Variable(self.target_onehot).to(self.args.device)
+        self.path_prob_init = Variable(torch.ones(batch_size, 1)).to(self.args.device)
     '''
     def forward(self, x):
         node = self.root
@@ -167,8 +160,7 @@ class SoftDecisionTree(nn.Module):
         self.define_extras(self.args.batch_size)
         for batch_idx, (data, target) in enumerate(train_loader):
             correct = 0
-            if self.args.cuda:
-                data, target = data.cuda(), target.cuda()
+            data, target = data.to(self.args.device), target.to(self.arg.device)
             #data = data.view(self.args.batch_size,-1)
             target = Variable(target)
             target_ = target.view(-1,1)
@@ -206,8 +198,7 @@ class SoftDecisionTree(nn.Module):
         test_loss = 0
         correct = 0
         for data, target in test_loader:
-            if self.args.cuda:
-                data, target = data.cuda(), target.cuda()
+            data, target = data.to(self.args.device), target.to(self.args.device)
             target = Variable(target)
             target_ = target.view(-1,1)
             batch_size = target_.size()[0]
