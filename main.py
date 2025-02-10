@@ -76,7 +76,7 @@ if args.cuda:
     model.cuda()
 
 for epoch in range(1, args.epochs + 1):
-    model.train_(train_loader, epoch)
+    model.train_erm(train_loader, epoch)
     model.test_(test_loader, epoch)
 
 save_result(model)
