@@ -162,7 +162,7 @@ class SoftDecisionTree(nn.Module):
                 self.param_list.append(beta)
                 self.module_list.append(fc)
 
-    def train_(self, train_loader, epoch):
+    def train_erm(self, train_loader, epoch):
         self.train()
         self.define_extras(self.args.batch_size)
         for batch_idx, (data, target) in enumerate(train_loader):
@@ -193,9 +193,12 @@ class SoftDecisionTree(nn.Module):
             if batch_idx % self.args.log_interval == 0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}, Accuracy: {}/{} ({:.4f}%)'.format(
                     epoch, batch_idx * len(data), len(train_loader.dataset),
-                    100. * batch_idx / len(train_loader), loss.data[0],
+                    100. * batch_idx / len(train_loader), loss.data.item(), #changed loss.data[0] to loss.data.item()
                     correct, len(data),
                     accuracy))
+    
+    def train_irm(self,envs,epoch):
+        pass
 
     def test_(self, test_loader, epoch):
         self.eval()
