@@ -17,7 +17,7 @@ parser.add_argument('--output-dim', type=int, default=10, metavar='N',
                     help='output dimension size(default: 10)')
 parser.add_argument('--max-depth', type=int, default=8, metavar='N',
                     help='maximum depth of tree(default: 8)')
-parser.add_argument('--epochs', type=int, default=40, metavar='N',
+parser.add_argument('--epochse', type=int, default=40, metavar='N',
                     help='number of epochs to train (default: 40)')
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
@@ -25,26 +25,26 @@ parser.add_argument('--lmbda', type=float, default=0.1, metavar='LR',
                     help='temperature rate (default: 0.1)')
 parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                     help='SGD momentum (default: 0.5)')
-parser.add_argument('--no-cuda', action='store_true', default=False,
-                    help='disables CUDA training')
+parser.add_argument('--device', action='store_true', default='cpu',
+                    help='determines processor used during training')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 
 args = parser.parse_args()
-args.cuda = not args.no_cuda and torch.cuda.is_available()
+#args.cuda = not args.no_cuda and torch.cuda.is_available()
 
 torch.manual_seed(args.seed)
-if args.cuda:
-    torch.cuda.manual_seed(args.seed)
+#if args.cuda:
+    #torch.cuda.manual_seed(args.seed)
 
 try:
     os.makedirs('./data')
 except:
     print('directory ./data already exists')
 
-kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
+kwargs = {'num_workers': 1, 'pin_memory': True} if args.device=='cuda' else {}
 
 train_loader = torch.utils.data.DataLoader(
     datasets.MNIST('./data', train=True, download=True,
@@ -70,10 +70,7 @@ def save_result(acc):
     pickle.dump(acc, f)
     f.close()
 
-model = SoftDecisionTree(args)
-
-if args.cuda:
-    model.cuda()
+model = SoftDecisionTree(args).to(args.device)
 
 for epoch in range(1, args.epochs + 1):
     model.train_erm(train_loader, epoch)
