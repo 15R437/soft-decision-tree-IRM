@@ -58,7 +58,8 @@ def id_to_pos(tree_clf,invert=False):
                PrevNodeIsLChildLeaf = True
 
     if invert:
-        inj = dict(zip(inj.values(),inj.keys()))
+        inj = {value:key for key,value in inj.items()}
+        #import pdb; pdb.set_trace()
     
     def func(id:int):
         return inj[id]
