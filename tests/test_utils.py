@@ -38,7 +38,7 @@ def id_to_pos(tree_clf,invert=False):
                 for i in range(num_gens-1):
                     curr_pos = (curr_pos-2)/2
 
-                inj[id] = curr_pos/2
+                inj[id] = int(curr_pos/2)
 
             else:
                 inj[id] = 2*inj[id-1]+1 #current node is a left child of the previous node
