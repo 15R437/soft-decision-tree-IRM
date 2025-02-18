@@ -33,7 +33,7 @@ def id_to_pos(tree_clf,invert=False):
                     num_gens+=1
                     par_pos = (par_pos-2)/2
                     IsRChild = 1 if par_pos%1 == 0 else 0
-                    
+
                 curr_pos = inj[id-1]
                 for i in range(num_gens-1):
                     curr_pos = (curr_pos-2)/2
@@ -64,7 +64,7 @@ def id_to_pos(tree_clf,invert=False):
                 for i in range(num_gens-1):
                     curr_pos = (curr_pos-2)/2
 
-                inj[id] = curr_pos/2
+                inj[id] = int(curr_pos/2)
 
             else:
                inj[id] = 2*inj[id-1]+1
