@@ -1,5 +1,5 @@
 """Utility functions helpful for IRM training"""
-from model import SoftDecisionTree
+from src.model import SoftDecisionTree
 import torch
 import numpy as np
 import math
@@ -39,7 +39,7 @@ def add_dummy_nodes(tree_clf:DecisionTreeClassifier):
     """
     
     tree = tree_clf.tree_
-    max_depth = tree.max_dept
+    max_depth = tree.max_depth
     feature = [] #preferred ordering
     threshold = [] #preferred ordering
 
@@ -64,7 +64,7 @@ def add_dummy_nodes(tree_clf:DecisionTreeClassifier):
         else: #leaf node 
             pos = len(feature) #position of current node in our preferred ordering
             depth = math.floor(math.log(pos+1,2)) #current depth in tree
-            par_pos = (2**(depth-1))-1 + math.floor((pos-(2**depth)+1)/2) #position of parent node in our preferred ordering
+            par_pos = (2**(depth-1))-1 + math.floor((pos-(2**depth)+1)/2) #position of parent node in our preferred ordering - can also do par_pos = (pos-1)//2
             dummy = DummyNode(feature[par_pos],threshold[par_pos])
 
             feature.append(dummy.feature)

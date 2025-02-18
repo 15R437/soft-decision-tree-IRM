@@ -18,24 +18,30 @@ def id_to_pos(tree_clf,invert=False):
 
     PrevNodeIsLChildLeaf = False
     PrevNodeIsRChildLeaf = False
-    IsCousinNode = False
 
     for id in range(1,tree.node_count):
         ft = tree.feature[id]
         if ft!=-2: #inner node
-            if PrevNodeIsRChildLeaf: #current node is an uncle of the previous node
-                inj[id] = inj[id-1]//2
-                IsCousinNode = True 
-
-            elif IsCousinNode: #current node is a cousin to the node before the previous node
-                inj[id] = inj[id-2]+1
-                IsCousinNode = False
-
-            elif PrevNodeIsLChildLeaf: #current node is a sibling to previous node
+            if PrevNodeIsLChildLeaf: #current node is a sibling to previous node
                 inj[id] = inj[id-1]+1
+    
+            elif PrevNodeIsRChildLeaf: #we find the closest ancestor of the previous node that is a left child and the current node will be its right sibling
+                num_gens = 0
+                par_pos = (inj[id-1]-2)/2
+                IsRChild = 1 if par_pos%1 == 0 else 0
+                while IsRChild:
+                    num_gens+=1
+                    par_pos = (par_pos-2)/2
+                    IsRChild = 1 if par_pos%1 == 0 else 0
+                    
+                curr_pos = inj[id-1]
+                for i in range(num_gens-1):
+                    curr_pos = (curr_pos-2)/2
+
+                inj[id] = curr_pos/2
 
             else:
-                inj[id] = 2*inj[id-1]+1 #we can prove inductively that under our preferred ordering, the left child of node k is node 2k+1
+                inj[id] = 2*inj[id-1]+1 #current node is a left child of the previous node
             
             PrevNodeIsLChildLeaf = False
             PrevNodeIsRChildLeaf = False
@@ -46,12 +52,19 @@ def id_to_pos(tree_clf,invert=False):
                 PrevNodeIsRChildLeaf = True
                 PrevNodeIsLChildLeaf = False
 
-            elif IsCousinNode:
-                inj[id] = inj[id-2]+1
-                PrevNodeIsLChildLeaf = True
+            elif PrevNodeIsRChildLeaf:
+                num_gens = 0
+                par_pos = (inj[id-1]-2)/2
+                IsRChild = 1 if par_pos%1 == 0 else 0
+                while IsRChild:
+                    num_gens+=1
+                    par_pos = (par_pos-2)/2
+                    IsRChild = 1 if par_pos%1 == 0 else 0
+                curr_pos = inj[id-1]
+                for i in range(num_gens-1):
+                    curr_pos = (curr_pos-2)/2
 
-            elif PrevNodeIsRChildLeaf: #curent leaf is an uncle and so is a right child
-                inj[id] = inj[id-1]//2
+                inj[id] = curr_pos/2
 
             else:
                inj[id] = 2*inj[id-1]+1

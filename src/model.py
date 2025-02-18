@@ -150,8 +150,8 @@ class SoftDecisionTree(nn.Module):
             else:
                 fc = node.fc
                 beta = node.beta
-                nodes.append(node.right) #change to append node.left first and then node.right after 
-                nodes.append(node.left)
+                nodes.append(node.left) #change to append node.left first and then node.right after 
+                nodes.append(node.right)
                 self.param_list.append(beta)
                 self.module_list.append(fc)
 
