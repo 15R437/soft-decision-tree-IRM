@@ -113,3 +113,7 @@ def test_add_dummy_nodes(tree_clf):
         else:
             assert padded_tree.feature[pos] == tree.feature[inv_func(pos)]
             assert padded_tree.threshold[pos] == tree.threshold[inv_func(pos)]
+
+def test_decision_tree_penalty(soft_tree,X,y):
+    
+    pass

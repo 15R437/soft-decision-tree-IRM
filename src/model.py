@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
+from src.utils import decision_tree_penalty
 
 
 class InnerNode():
@@ -192,14 +193,56 @@ class SoftDecisionTree(nn.Module):
             if return_stats:
                 return {'loss':loss, 'acc':accuracy}
     
-    def train_irm(self,envs,epoch):
+    def train_irm(self,envs,epoch,print_progress=True,return_stats=False):
+        """
+        We expect envs to be a list of data loaders, each one corresponding to a different environment.
+        One training loop involves taking a batch from each environment, computing losses, updating 
+        our parmaeters and then moving on to the next set of batches until we exhaust the batches.
+
+        We assume that each environment has the same number of batches.
+        """
         self.train()
         self.define_extras(self.args.batch_size)
-        for e in envs:
-            for batch_idx, (data,target) in enumerate(e):
-                data,target = data.to(self.args.device),target.to(self.args.device)
-                pass
-        pass
+        NUM_BATCHES = min([len(e) for e in envs])
+        for batch_idx in range(NUM_BATCHES):
+            for id,e in enumerate(envs):
+                data,target = next(iter(e))
+                data,target = data.to(self.args.device), target.to(self.args.device)
+                #data = data.view(self.args.batch_size,-1)
+                target = Variable(target)
+                target_ = target.view(-1,1)
+                batch_size = target_.size()[0]
+                data = data.view(batch_size,-1)
+                #convert int target to one-hot vector
+                data = Variable(data)
+                if not batch_size == self.args.batch_size:
+                    self.define_extras(batch_size)
+                self.target_onehot.data.zero_()            
+                self.target_onehot.scatter_(1, target_, 1.)
+                if id==0:
+                    loss,output = self.cal_loss(data, self.target_onehot)
+                else:
+                    new_loss,new_output = self.cal_loss(data, self.target_onehot)
+                    loss += new_loss
+                    output = torch.cat([output,new_output],dim=0)
+                loss += decision_tree_penalty(self,data,self.target_onehot)
+            
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+            pred = output.data.max(1)[1] # get the index of the max log-probability
+            correct += pred.eq(target.data).cpu().sum()
+            accuracy = 100. * correct / len(data)
+
+            if print_progress:
+                if batch_idx % self.args.log_interval == 0:
+                    print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}, Accuracy: {}/{} ({:.4f}%)'.format(
+                        epoch, batch_idx * len(data), len(envs[0].dataset),
+                        100. * batch_idx / len(envs[0]), loss.data.item(), #changed loss.data[0] to loss.data.item()
+                        correct, len(data),
+                        accuracy))
+            if return_stats:
+                return {'loss':loss, 'acc':accuracy}
 
     def test_(self, test_loader, epoch):
         self.eval()
