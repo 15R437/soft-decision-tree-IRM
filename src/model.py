@@ -75,7 +75,7 @@ class LeafNode():
         self.param = torch.randn(self.args.output_dim).to(self.args.device)
         self.param = nn.Parameter(self.param)
         self.leaf = True
-        self.softmax = nn.Softmax()
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self):
         return(self.softmax(self.param.view(1,-1)))
@@ -196,7 +196,7 @@ class SoftDecisionTree(nn.Module):
     def train_irm(self,envs,epoch,print_progress=True,return_stats=False):
         """
         We expect envs to be a list of data loaders, each one corresponding to a different environment.
-        One training loop involves taking a batch from each environment, computing losses, updating 
+        One training loop involves taking a batch from each environment (dataloader), computing losses, updating 
         our parmaeters and then moving on to the next set of batches until we exhaust the batches.
 
         We assume that each environment has the same number of batches.
@@ -204,7 +204,8 @@ class SoftDecisionTree(nn.Module):
         self.train()
         self.define_extras(self.args.batch_size)
         NUM_BATCHES = min([len(e) for e in envs])
-        for batch_idx in range(NUM_BATCHES):
+        num_envs = len(envs)
+        for batch_idx in range(1,NUM_BATCHES+1):
             for id,e in enumerate(envs):
                 data,target = next(iter(e))
                 data,target = data.to(self.args.device), target.to(self.args.device)
@@ -221,26 +222,32 @@ class SoftDecisionTree(nn.Module):
                 self.target_onehot.scatter_(1, target_, 1.)
                 if id==0:
                     loss,output = self.cal_loss(data, self.target_onehot)
+                    all_targets = target.clone().view(1,-1) #each row represents an environment, the columns are the targets
                 else:
                     new_loss,new_output = self.cal_loss(data, self.target_onehot)
                     loss += new_loss
                     output = torch.cat([output,new_output],dim=0)
+                    all_targets = torch.cat([all_targets,target.clone().view(1,-1)],dim=0)
+
                 loss += decision_tree_penalty(self,data,self.target_onehot)
             
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            pred = output.data.max(1)[1] # get the index of the max log-probability
-            correct += pred.eq(target.data).cpu().sum()
-            accuracy = 100. * correct / len(data)
-
+            pred = output.data.max(1)[1].view(num_envs,-1) # get the index of the max log-probability
+            correct = pred.eq(all_targets.data).cpu().sum(dim=1)
+            accuracy = 100. * correct / batch_size
+            #import pdb; pdb.set_trace()
             if print_progress:
                 if batch_idx % self.args.log_interval == 0:
-                    print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}, Accuracy: {}/{} ({:.4f}%)'.format(
-                        epoch, batch_idx * len(data), len(envs[0].dataset),
-                        100. * batch_idx / len(envs[0]), loss.data.item(), #changed loss.data[0] to loss.data.item()
-                        correct, len(data),
-                        accuracy))
+                    num_data_processed = batch_idx*num_envs*batch_size
+                    total_data = num_envs*batch_size*NUM_BATCHES
+                    formatted_accuracy = "%, ".join(list(map(lambda acc: f"{acc.item():.2f}",accuracy)))
+                    print(f"""Train Epoch: {epoch} [{num_data_processed}/{total_data} ({100.*batch_idx/NUM_BATCHES:.0f}%)]\t
+                          Loss: {loss.data.item():.6f},\n
+                        Environment Accuracy: {formatted_accuracy}%, \n
+                        Total Accuracy: {correct.sum().item()}/{batch_size*num_envs} 
+                          ({100.*correct.sum().item()/(batch_size*num_envs):.2f})%""")
             if return_stats:
                 return {'loss':loss, 'acc':accuracy}
 

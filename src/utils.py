@@ -95,15 +95,15 @@ def decision_tree_penalty(soft_tree, X, y, depth_discount_factor=1,pad_tree=True
     for node in range(padded_tree.node_count):
         if padded_tree.dummy_nodes[node]:
             continue
-        W_opt.append([1. if i==padded_tree.feature[node] else 0. for i in range(num_features)]
-                      + [-padded_tree.threshold[node]])
+        W_opt.append(torch.tensor([1. if i==padded_tree.feature[node] else 0. for i in range(num_features)]
+                      + [-padded_tree.threshold[node]]))
         W.append(torch.cat([soft_tree.module_list[node].weight,
                   + soft_tree.module_list[node].bias.view(-1,1)],dim=1)[0])
         
-        discount.append(depth_discount_factor**(-math.floor(math.log(node+1,2))))
+        discount.append(torch.tensor(depth_discount_factor**(-math.floor(math.log(node+1,2)))))
 
-    W_opt = torch.Tensor(W_opt)
-    W = torch.Tensor(W)
+    W_opt = torch.stack(W_opt)
+    W = torch.stack(W)
     l2_dist = torch.sum((W_opt-W)**2,dim=1) #node-wise distance
 
-    return torch.mean(discount*l2_dist)
+    return torch.mean(torch.stack(discount)*l2_dist)
