@@ -107,3 +107,13 @@ def decision_tree_penalty(soft_tree, X, y, depth_discount_factor=1):
     l2_dist = torch.sum((W_opt-W)**2,dim=1) #node-wise distance
 
     return torch.mean(torch.stack(discount)*l2_dist)
+
+def max_one_regularization(weights):
+    """Encourages one-hot or near-one-hot vectors."""
+    loss = torch.tensor(0.0).to(weights.device)
+    for w in weights: #Iterate over all weight vectors
+        abs_w = torch.abs(w)
+        max_val = torch.max(abs_w)
+        loss += torch.sum((abs_w - max_val)**2) # Penalize differences from the maximum value
+        loss += torch.abs(torch.sum(abs_w) -1 ) # Penalize if sum of absolute value is not 1
+    return loss

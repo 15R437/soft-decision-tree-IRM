@@ -161,7 +161,7 @@ class SoftDecisionTree(nn.Module):
         self.define_extras(self.args.batch_size)
         for batch_idx, (data, target) in enumerate(train_loader):
             correct = 0
-            data, target = data.to(self.args.device), target.to(self.arg.device)
+            data, target = data.to(self.args.device), target.to(self.args.device)
             #data = data.view(self.args.batch_size,-1)
             target = Variable(target)
             target_ = target.view(-1,1)
