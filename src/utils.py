@@ -75,7 +75,7 @@ def add_dummy_nodes(tree_clf:DecisionTreeClassifier):
 
     return PaddedTree(feature,threshold,max_depth,dummy_nodes)
 
-def decision_tree_penalty(soft_tree, X, y, depth_discount_factor=1,pad_tree=True):
+def decision_tree_penalty(soft_tree, X, y, depth_discount_factor=1):
     """this computes an optimal hard decision tree given data and target and then computes
     the L2 distance between the non-dummy weightsbetween this optimal tree and soft_tree. """
     tree_classifier = DecisionTreeClassifier(max_depth=soft_tree.args.max_depth)

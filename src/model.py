@@ -193,7 +193,8 @@ class SoftDecisionTree(nn.Module):
             if return_stats:
                 return {'loss':loss, 'acc':accuracy}
     
-    def train_irm(self,envs,epoch,print_progress=True,return_stats=False):
+    def train_irm(self,envs,epoch,print_progress=True,return_stats=False,
+                  penalty_weight=100,penalty_anneal_iters=50,depth_discount_factor=2):
         """
         We expect envs to be a list of data loaders, each one corresponding to a different environment.
         One training loop involves taking a batch from each environment (dataloader), computing losses, updating 
@@ -228,8 +229,9 @@ class SoftDecisionTree(nn.Module):
                     loss += new_loss
                     output = torch.cat([output,new_output],dim=0)
                     all_targets = torch.cat([all_targets,target.clone().view(1,-1)],dim=0)
-
-                loss += decision_tree_penalty(self,data,self.target_onehot)
+                if epoch > penalty_anneal_iters:
+                    loss += penalty_weight*decision_tree_penalty(self,data,self.target_onehot,depth_discount_factor)
+                    if penalty_weight>1.0: loss /= penalty_weight
             
             self.optimizer.zero_grad()
             loss.backward()
@@ -243,11 +245,7 @@ class SoftDecisionTree(nn.Module):
                     num_data_processed = batch_idx*num_envs*batch_size
                     total_data = num_envs*batch_size*NUM_BATCHES
                     formatted_accuracy = "%, ".join(list(map(lambda acc: f"{acc.item():.2f}",accuracy)))
-                    print(f"""Train Epoch: {epoch} [{num_data_processed}/{total_data} ({100.*batch_idx/NUM_BATCHES:.0f}%)]\t
-                          Loss: {loss.data.item():.6f},\n
-                        Environment Accuracy: {formatted_accuracy}%, \n
-                        Total Accuracy: {correct.sum().item()}/{batch_size*num_envs} 
-                          ({100.*correct.sum().item()/(batch_size*num_envs):.2f})%""")
+                    print(f"""Train Epoch: {epoch} [{num_data_processed}/{total_data} ({100.*batch_idx/NUM_BATCHES:.0f}%)]\t Loss: {loss.data.item():.6f}, Accuracy: {correct.sum().item()}/{batch_size*num_envs} ({100.*correct.sum().item()/(batch_size*num_envs):.2f})%""")
             if return_stats:
                 return {'loss':loss, 'acc':accuracy}
 

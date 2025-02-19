@@ -34,6 +34,6 @@ args = SoftTreeArgs(input_dim=4,output_dim=2)
 soft_tree = SoftDecisionTree(args)
 #import pdb; pdb.set_trace()
 
-NUM_EPOCHS = 50
+NUM_EPOCHS = 100
 for epoch in range(1,NUM_EPOCHS+1):
-    soft_tree.train_irm(envs,epoch)
+    soft_tree.train_irm(envs,epoch,penalty_anneal_iters=20)
