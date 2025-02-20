@@ -9,20 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.tree import DecisionTreeClassifier
 from src.utils import add_dummy_nodes, decision_tree_penalty
 from src.model import SoftDecisionTree
-
-
-class SoftTreeArgs():
-    def __init__(self,input_dim,output_dim,
-                 batch_size=16,device='cpu',lmbda=1,max_depth=3,lr=0.001,momentum=0.1,log_interval=5):
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.batch_size = batch_size
-        self.device = device
-        self.lmbda = lmbda
-        self.max_depth = max_depth
-        self.lr = lr
-        self.momentum = momentum
-        self.log_interval = log_interval
+from src.utils import SoftTreeArgs
 
 NUM_ENVS = 10
 rand_X = [torch.randn(100,4) for i in range(NUM_ENVS)]
@@ -44,4 +31,4 @@ for epoch in range(1,NUM_EPOCHS):
     soft_tree1.train_erm(erm_dataloader,epoch)
 print("IRM Training")
 for epoch in range(1,NUM_EPOCHS+1):
-    soft_tree2.train_irm(envs,epoch,penalty_anneal_iters=20)
+    soft_tree2.train_irm(envs,epoch,penalty_anneal_iters=50,l1_weight=0.01,max_one_weight=0.1)

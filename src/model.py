@@ -7,8 +7,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-from src.utils import decision_tree_penalty
+from src.utils import decision_tree_penalty, max_one_regularisation, feature_selector
 
+class UpperTriangularWeight(nn.Module):
+    def __init__(self, size):
+        super().__init__()
+        self.size = size
+        self.weight = nn.Parameter(torch.rand(size, size)) #initialie a matrix with entries in [0,1)
+        self.register_buffer("mask", torch.triu(torch.ones_like(self.weight))) #a mask for the upper triangle bit
+
+    def forward(self):
+        return self.weight * self.mask
+    
+    def set_weight_as(self,w):
+        #error handling - make sure size of w is consistent with size
+        self.weight=nn.Parameter(w)
 
 class InnerNode():
 
@@ -96,6 +109,7 @@ class SoftDecisionTree(nn.Module):
         super(SoftDecisionTree, self).__init__()
         self.args = args
         self.root = InnerNode(1, self.args)
+        self.phi = UpperTriangularWeight(self.args.input_dim)
         self.collect_parameters() ##collect parameters and modules under root node
         self.optimizer = optim.SGD(self.parameters(), lr=self.args.lr, momentum=self.args.momentum)
         self.test_acc = []
@@ -115,9 +129,12 @@ class SoftDecisionTree(nn.Module):
             node, prob = node.select_next(x)
             path_prob *= prob
         return node()
-    '''        
-    def cal_loss(self, x, y):
+    '''    
+    def cal_loss(self, x, y,include_featuriser=True):
         batch_size = y.size()[0]
+        if include_featuriser: 
+            x = x@self.phi().t()
+            #x = x@feature_selector(self.phi.weight*self.phi.mask).t() #hard feature selection chooses, for each row, the feature corresponding to the column of the maximum value on that row
         leaf_accumulator = self.root.cal_prob(x, self.path_prob_init)
         loss = 0.
         max_prob = [-1. for _ in range(batch_size)]
@@ -139,10 +156,11 @@ class SoftDecisionTree(nn.Module):
         self.root.reset() ##reset all stacked calculation
         return(-loss + C, output) ## -log(loss) will always output non, because loss is always below zero. I suspect this is the mistake of the paper?
 
-    def collect_parameters(self):
+    def collect_parameters(self,include_featuriser=True):
         nodes = [self.root]
         self.module_list = nn.ModuleList()
         self.param_list = nn.ParameterList()
+        if include_featuriser: self.param_list.append(self.phi.weight)
         while nodes:
             node = nodes.pop(0)
             if node.leaf:
@@ -156,7 +174,7 @@ class SoftDecisionTree(nn.Module):
                 self.param_list.append(beta)
                 self.module_list.append(fc)
 
-    def train_erm(self, train_loader, epoch, print_progress=True,return_stats=False):
+    def train_erm(self, train_loader, epoch, print_progress=True,return_stats=False,include_featuriser=False):
         self.train()
         self.define_extras(self.args.batch_size)
         for batch_idx, (data, target) in enumerate(train_loader):
@@ -175,7 +193,7 @@ class SoftDecisionTree(nn.Module):
             self.target_onehot.scatter_(1, target_, 1.)
             self.optimizer.zero_grad()
 
-            loss, output = self.cal_loss(data, self.target_onehot)
+            loss, output = self.cal_loss(data, self.target_onehot,include_featuriser)
             #loss.backward(retain_variables=True)
             loss.backward()
             self.optimizer.step()
@@ -194,7 +212,8 @@ class SoftDecisionTree(nn.Module):
                 return {'loss':loss, 'acc':accuracy}
     
     def train_irm(self,envs,epoch,print_progress=True,return_stats=False,
-                  penalty_weight=100,penalty_anneal_iters=50,depth_discount_factor=2):
+                  penalty_weight=100,penalty_anneal_iters=50,depth_discount_factor=2,
+                  l1_weight=10,max_one_weight=10):
         """
         We expect envs to be a list of data loaders, each one corresponding to a different environment.
         One training loop involves taking a batch from each environment (dataloader), computing losses, updating 
@@ -230,9 +249,32 @@ class SoftDecisionTree(nn.Module):
                     output = torch.cat([output,new_output],dim=0)
                     all_targets = torch.cat([all_targets,target.clone().view(1,-1)],dim=0)
                 if epoch > penalty_anneal_iters:
+                    data = data@self.phi().t()
+                    #data = data @feature_selector(self.phi.weight*self.phi.mask).t() #hard feature selection
                     loss += penalty_weight*decision_tree_penalty(self,data,self.target_onehot,depth_discount_factor)
                     if penalty_weight>1.0: loss /= penalty_weight
             
+            #featuriser regularisation
+            l1_loss = torch.tensor(0.).to(self.args.device)
+            for w in self.phi.weight*self.phi.mask:
+                l1_loss += torch.norm(w,p=1)
+            for w in (self.phi.weight*self.phi.mask).t():
+                l1_loss += torch.norm(w,p=1)
+
+            max_one_loss = max_one_regularisation(self.phi.weight*self.phi.mask)
+            max_one_loss+= max_one_regularisation((self.phi.weight*self.phi.mask).t()) 
+            loss += l1_weight*l1_loss + max_one_weight *max_one_loss
+
+            #regularisation for soft tree weights
+            l1_loss = torch.tensor(0.).to(self.args.device)
+            max_one_loss = torch.tensor(0.).to(self.args.device)
+            for fc in self.module_list:
+                max_one_loss+= max_one_regularisation(fc.weight)
+                for w in fc.weight:
+                    l1_loss += torch.norm(w,p=1)
+            loss += l1_weight*l1_loss + max_one_weight*max_one_loss
+
+
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -249,7 +291,7 @@ class SoftDecisionTree(nn.Module):
             if return_stats:
                 return {'loss':loss, 'acc':accuracy}
 
-    def test_(self, test_loader, epoch):
+    def test_(self, test_loader,print_result=True,return_acc=False):
         self.eval()
         self.define_extras(self.args.batch_size)
         test_loss = 0
@@ -270,7 +312,8 @@ class SoftDecisionTree(nn.Module):
             pred = output.data.max(1)[1] # get the index of the max log-probability
             correct += pred.eq(target.data).cpu().sum()
         accuracy = 100. * correct / len(test_loader.dataset)
-        print('\nTest set: Accuracy: {}/{} ({:.4f}%)\n'.format(
+        if print_result:
+            print('\nTest set: Accuracy: {}/{} ({:.4f}%)\n'.format(
             correct, len(test_loader.dataset),
             accuracy))
         self.test_acc.append(accuracy)
@@ -278,6 +321,8 @@ class SoftDecisionTree(nn.Module):
         if accuracy > self.best_accuracy:
             self.save_best('./result')
             self.best_accuracy = accuracy
+        if return_acc:
+            return self.best_accuracy
 
     def save_best(self, path):
         try:

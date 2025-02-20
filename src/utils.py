@@ -15,6 +15,19 @@ its left and right children (d=1) have id 1 and 2 respectively; their children (
                                             1               2
                                         3       4       5       6
 """
+class SoftTreeArgs():
+    def __init__(self,input_dim,output_dim,
+                 batch_size=16,device='cpu',lmbda=1,max_depth=3,lr=0.01,momentum=0.1,log_interval=5):
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.batch_size = batch_size
+        self.device = device
+        self.lmbda = lmbda
+        self.max_depth = max_depth
+        self.lr = lr
+        self.momentum = momentum
+        self.log_interval = log_interval
+        
 class PaddedTree():
     def __init__(self,feature,threshold,max_depth,dummy_nodes):
         self.feature = feature
@@ -64,7 +77,7 @@ def add_dummy_nodes(tree_clf:DecisionTreeClassifier):
         else: #leaf node 
             pos = len(feature) #position of current node in our preferred ordering
             depth = math.floor(math.log(pos+1,2)) #current depth in tree
-            par_pos = (2**(depth-1))-1 + math.floor((pos-(2**depth)+1)/2) #position of parent node in our preferred ordering - can also do par_pos = (pos-1)//2
+            par_pos = int((2**(depth-1))-1 + math.floor((pos-(2**depth)+1)/2)) #position of parent node in our preferred ordering - can also do par_pos = (pos-1)//2
             dummy = DummyNode(feature[par_pos],threshold[par_pos])
 
             feature.append(dummy.feature)
@@ -80,12 +93,12 @@ def decision_tree_penalty(soft_tree, X, y, depth_discount_factor=1):
     the L2 distance between the non-dummy weightsbetween this optimal tree and soft_tree. """
     tree_classifier = DecisionTreeClassifier(max_depth=soft_tree.args.max_depth)
     if type(X) == torch.Tensor:
-        X = X.numpy()
+        X_ = X.detach().numpy()
     if type(y) == torch.Tensor:
-        y  = y.numpy()
+        y_  = y.detach().numpy()
     
     num_features = X.shape[1]
-    tree_classifier.fit(X,y)
+    tree_classifier.fit(X_,y_)
     padded_tree = add_dummy_nodes(tree_classifier)
 
     W_opt = [] #the optimal coefficients at each node according to tree_classifier
@@ -108,12 +121,32 @@ def decision_tree_penalty(soft_tree, X, y, depth_discount_factor=1):
 
     return torch.mean(torch.stack(discount)*l2_dist)
 
-def max_one_regularization(weights):
+def max_one_regularisation(weights):
     """Encourages one-hot or near-one-hot vectors."""
-    loss = torch.tensor(0.0).to(weights.device)
-    for w in weights: #Iterate over all weight vectors
+    loss = torch.tensor(0.).to(weights.device)
+    for w in weights: #iterate over all rows
         abs_w = torch.abs(w)
         max_val = torch.max(abs_w)
-        loss += torch.sum((abs_w - max_val)**2) # Penalize differences from the maximum value
-        loss += torch.abs(torch.sum(abs_w) -1 ) # Penalize if sum of absolute value is not 1
+        loss += torch.sum((abs_w - max_val)**2) # Penalise differences from the maximum value
+        loss += torch.abs(torch.sum(abs_w) -1 ) # Penalise if sum of absolute value is not 1
     return loss
+
+def phi_regularisation(weights):
+    """Encourages each row to pick different features (in a particular order??)"""
+    loss = torch.tensor(0.).to(weights.device)
+    for row,w in enumerate(weights):
+        if row == 0:
+            continue
+        else:
+            for col,v in enumerate(w):
+                loss+= 1
+
+    pass
+
+def feature_selector(weights):
+    """
+    """
+    output = []
+    for w in weights:
+        output.append([torch.relu(torch.max(w)-0.5) if i==torch.argmax(w) else 0. for i in range(len(w))])
+    return torch.tensor(output)
