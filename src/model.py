@@ -213,7 +213,7 @@ class SoftDecisionTree(nn.Module):
     
     def train_irm(self,envs,epoch,print_progress=True,return_stats=False,
                   penalty_weight=100,penalty_anneal_iters=50,depth_discount_factor=2,
-                  l1_weight=10,max_one_weight=10):
+                  l1_weight_feat=10,l1_weight_tree=10,max_one_weight=0):
         """
         We expect envs to be a list of data loaders, each one corresponding to a different environment.
         One training loop involves taking a batch from each environment (dataloader), computing losses, updating 
@@ -256,7 +256,7 @@ class SoftDecisionTree(nn.Module):
             
             #featuriser regularisation
             l1_loss = torch.norm(self.phi,p=1)
-            loss += l1_weight*l1_loss
+            loss += l1_weight_feat*l1_loss
 
             #regularisation for soft tree weights
             l1_loss = torch.tensor(0.).to(self.args.device)
@@ -265,7 +265,7 @@ class SoftDecisionTree(nn.Module):
                 max_one_loss+= max_one_regularisation(fc.weight)
                 for w in fc.weight:
                     l1_loss += torch.norm(w,p=1)
-            loss += l1_weight*l1_loss + max_one_weight*max_one_loss
+            loss += l1_weight_tree*l1_loss + max_one_weight*max_one_loss
 
 
             self.optimizer.zero_grad()
@@ -281,8 +281,8 @@ class SoftDecisionTree(nn.Module):
                     total_data = num_envs*batch_size*NUM_BATCHES
                     formatted_accuracy = "%, ".join(list(map(lambda acc: f"{acc.item():.2f}",accuracy)))
                     print(f"""Train Epoch: {epoch} [{num_data_processed}/{total_data} ({100.*batch_idx/NUM_BATCHES:.0f}%)]\t Loss: {loss.data.item():.6f}, Accuracy: {correct.sum().item()}/{batch_size*num_envs} ({100.*correct.sum().item()/(batch_size*num_envs):.2f})%""")
-            if return_stats:
-                return {'loss':loss, 'acc':accuracy}
+        if return_stats:
+            return {'loss':loss, 'acc':accuracy}
 
     def test_(self, test_loader,print_result=True,return_acc=False):
         self.eval()
