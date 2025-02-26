@@ -17,7 +17,7 @@ its left and right children (d=1) have id 1 and 2 respectively; their children (
 """
 class SoftTreeArgs():
     def __init__(self,input_dim,output_dim,
-                 batch_size=16,device='cpu',lmbda=1,max_depth=3,lr=0.01,momentum=0.1,log_interval=5):
+                 batch_size=16,device='mps',lmbda=1,max_depth=3,lr=0.001,momentum=0.1,log_interval=5):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.batch_size = batch_size
@@ -76,8 +76,9 @@ def add_dummy_nodes(tree_clf:DecisionTreeClassifier):
             dummy_nodes.append(0)
         else: #leaf node 
             pos = len(feature) #position of current node in our preferred ordering
-            depth = math.floor(math.log(pos+1,2)) #current depth in tree
-            par_pos = int((2**(depth-1))-1 + math.floor((pos-(2**depth)+1)/2)) #position of parent node in our preferred ordering - can also do par_pos = (pos-1)//2
+            if pos==0: #root node is leaf
+                continue
+            par_pos = (pos-1)//2 #position of parent node in our preferred ordering
             dummy = DummyNode(feature[par_pos],threshold[par_pos])
 
             feature.append(dummy.feature)
@@ -91,32 +92,37 @@ def add_dummy_nodes(tree_clf:DecisionTreeClassifier):
 def decision_tree_penalty(soft_tree, X, y, depth_discount_factor=1):
     """this computes an optimal hard decision tree given data and target and then computes
     the L2 distance between the non-dummy weightsbetween this optimal tree and soft_tree. """
-    tree_classifier = DecisionTreeClassifier(max_depth=soft_tree.args.max_depth)
+    tree_classifier = DecisionTreeClassifier(max_depth=soft_tree.args.max_depth,random_state=0) #important to fix random state so in the case where features tie, we always get the same tree structure.
     if type(X) == torch.Tensor:
-        X_ = X.detach().numpy()
+        X_ = X.detach().cpu().numpy()
     if type(y) == torch.Tensor:
-        y_  = y.detach().numpy()
+        y_  = y.detach().cpu().numpy()
     
     num_features = X.shape[1]
     tree_classifier.fit(X_,y_)
-    padded_tree = add_dummy_nodes(tree_classifier)
+    try:
+        padded_tree = add_dummy_nodes(tree_classifier)
+    except:
+        import pdb; pdb.set_trace()
 
     W_opt = [] #the optimal coefficients at each node according to tree_classifier
     W = [] #the coefficients of soft_tree collected at those nodes which exist in tree_classifier
     discount = []
-
+    if padded_tree.node_count ==0:
+        return torch.tensor(0.).to(soft_tree.args.device)
+    
     for node in range(padded_tree.node_count):
         if padded_tree.dummy_nodes[node]:
             continue
         W_opt.append(torch.tensor([1. if i==padded_tree.feature[node] else 0. for i in range(num_features)]
-                      + [-padded_tree.threshold[node]]))
+                      + [-padded_tree.threshold[node]]).float())
         W.append(torch.cat([soft_tree.module_list[node].weight,
                   + soft_tree.module_list[node].bias.view(-1,1)],dim=1)[0])
         
-        discount.append(torch.tensor(depth_discount_factor**(-math.floor(math.log(node+1,2)))))
+        discount.append(torch.tensor(depth_discount_factor**(-math.floor(math.log(node+1,2)))).to(soft_tree.args.device))
 
-    W_opt = torch.stack(W_opt)
-    W = torch.stack(W)
+    W_opt = torch.stack(W_opt).to(soft_tree.args.device)
+    W = torch.stack(W).to(soft_tree.args.device)
     l2_dist = torch.sum((W_opt-W)**2,dim=1) #node-wise distance
 
     return torch.mean(torch.stack(discount)*l2_dist)

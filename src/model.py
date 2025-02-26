@@ -27,7 +27,7 @@ class InnerNode():
 
     def __init__(self, depth, args):
         self.args = args
-        self.fc = nn.Linear(self.args.input_dim, 1)
+        self.fc = nn.Linear(self.args.input_dim, 1).to(self.args.device)
         beta = torch.randn(1).to(self.args.device)
         #beta = beta.expand((self.args.batch_size, 1))
         self.beta = nn.Parameter(beta)
@@ -109,8 +109,9 @@ class SoftDecisionTree(nn.Module):
         super(SoftDecisionTree, self).__init__()
         self.args = args
         self.root = InnerNode(1, self.args)
-        self.phi = nn.Parameter(torch.rand(self.args.input_dim))
+        self.phi = nn.Parameter(torch.rand(self.args.input_dim)).to(self.args.device)
         self.collect_parameters() ##collect parameters and modules under root node
+        #self.optimizer = optim.Adam(self.parameters(),lr=self.args.lr)
         self.optimizer = optim.SGD(self.parameters(), lr=self.args.lr, momentum=self.args.momentum)
         self.test_acc = []
         self.define_extras(self.args.batch_size)
@@ -140,7 +141,7 @@ class SoftDecisionTree(nn.Module):
         max_prob = [-1. for _ in range(batch_size)]
         max_Q = [torch.zeros(self.args.output_dim) for _ in range(batch_size)]
         for (path_prob, Q) in leaf_accumulator:
-            TQ = torch.bmm(y.view(batch_size, 1, self.args.output_dim), torch.log(Q).view(batch_size, self.args.output_dim, 1)).view(-1,1)
+            TQ = torch.bmm(y.clone().view(batch_size, 1, self.args.output_dim), torch.log(Q).clone().view(batch_size, self.args.output_dim, 1)).view(-1,1)
             loss += path_prob * TQ
             path_prob_numpy = path_prob.cpu().data.numpy().reshape(-1)
             for i in range(batch_size):
@@ -174,7 +175,7 @@ class SoftDecisionTree(nn.Module):
                 self.param_list.append(beta)
                 self.module_list.append(fc)
 
-    def train_erm(self, train_loader, epoch, print_progress=True,return_stats=False):
+    def train_erm(self, train_loader, epoch, print_progress=True,return_stats=False,l1_weight_tree=0):
         self.train()
         self.define_extras(self.args.batch_size)
         for batch_idx, (data, target) in enumerate(train_loader):
@@ -192,8 +193,15 @@ class SoftDecisionTree(nn.Module):
             self.target_onehot.data.zero_()            
             self.target_onehot.scatter_(1, target_, 1.)
             self.optimizer.zero_grad()
-
+            
             loss, output = self.cal_loss(data, self.target_onehot,include_featuriser=False)
+            l1_loss = torch.tensor(0.).to(self.args.device)
+            for fc in self.module_list:
+                for w in fc.weight:
+                    l1_loss += torch.norm(w,p=1)
+
+            loss += l1_weight_tree*l1_loss
+            loss /= l1_weight_tree
             #loss.backward(retain_variables=True)
             loss.backward()
             self.optimizer.step()
@@ -216,7 +224,7 @@ class SoftDecisionTree(nn.Module):
                   l1_weight_feat=10,l1_weight_tree=10,max_one_weight=0):
         """
         We expect envs to be a list of data loaders, each one corresponding to a different environment.
-        One training loop involves taking a batch from each environment (dataloader), computing losses, updating 
+        One training loop involves taking the first batch from each environment (dataloader), computing losses, updating 
         our parmaeters and then moving on to the next set of batches until we exhaust the batches.
 
         We assume that each environment has the same number of batches.
@@ -260,19 +268,23 @@ class SoftDecisionTree(nn.Module):
 
             #regularisation for soft tree weights
             l1_loss = torch.tensor(0.).to(self.args.device)
-            max_one_loss = torch.tensor(0.).to(self.args.device)
+            #max_one_loss = torch.tensor(0.).to(self.args.device)
             for fc in self.module_list:
-                max_one_loss+= max_one_regularisation(fc.weight)
+                #max_one_loss+= max_one_regularisation(fc.weight).to(self.args.device)
                 for w in fc.weight:
                     l1_loss += torch.norm(w,p=1)
-            loss += l1_weight_tree*l1_loss + max_one_weight*max_one_loss
+            loss += l1_weight_tree*l1_loss #+ max_one_weight*max_one_loss
+            loss /= l1_weight_feat*l1_weight_tree
 
 
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            pred = output.data.max(1)[1].view(num_envs,-1) # get the index of the max log-probability
-            correct = pred.eq(all_targets.data).cpu().sum(dim=1)
+            pred = output.data.max(1)[1].view(num_envs,-1).to(self.args.device) # get the index of the max log-probability
+            try:
+                correct = pred.eq(all_targets.data).cpu().sum(dim=1)
+            except:
+                import pdb; pdb.set_trace()
             accuracy = 100. * correct / batch_size
             #import pdb; pdb.set_trace()
             if print_progress:
