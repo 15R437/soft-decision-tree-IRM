@@ -13,16 +13,16 @@ from sklearn.metrics import mean_squared_error # Example metric, use your own
 from sklearn.preprocessing import MinMaxScaler
 
 class DataObject():
-    def __init__(self,data,test_data=None,scaler=MinMaxScaler()):
+    def __init__(self,data,test_data=None):
         if not test_data is None:
-            self.test_data = DataObject(test_data,scaler=scaler)
+            self.test_data = DataObject(test_data)
         else:
             self.test_data = None
 
         if type(data)==DataLoader:
             self.training_type = 'erm'
             X,y = next(iter(data))
-            while True:
+            for i in range(len(data)-1):
                 try:
                     X_,y_ = next(iter(data))
                     X = torch.cat([X,X_],dim=0)
@@ -31,6 +31,7 @@ class DataObject():
                     break
             self.X = np.array(X)
             self.y = np.array(y)
+            self.batch_size = data.batch_size
 
         elif type(data)==list:
             self.training_type = 'irm'
@@ -41,9 +42,9 @@ class DataObject():
                     X,y = next(iter(loader))
                 except:
                     raise Exception(f"Expected list of data loaders. Instead got {type(loader)} at index {id} ")
-                while True:
+                for i in range(len(loader)-1):
                     try:
-                        X_,y_ = next(iter(data))
+                        X_,y_ = next(iter(loader))
                         X = torch.cat([X,X_],dim=0)
                         y = torch.cat([y,y_],dim=0)
                     except StopIteration:
@@ -53,18 +54,17 @@ class DataObject():
 
             self.X = np.array(X_envs) #3d array whose rows are environments. Assumes that...
             self.y = np.array(y_envs) #..each environment has the same number of data points.
+            self.batch_size = data[0].batch_size
 
         else:
             raise Exception(f"""Expected either a Pytorch DataLoader object or a list of Pytorch DataLoader objects.
                              Instead got {type(data)}""")
-        if not scaler is None:
-            self.X_scaled = scaler.fit_transform(self.X)
 
 def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,scaler=MinMaxScaler(),k=5):
     if scaler==None:
         X_train_scaled = data_object.X
     else:
-        X_train_scaled = scaler.fit_transform(data_object.X)
+        X_train_scaled = np.array([scaler.fit_transform(x) for x in data_object.X])
     
     y_train = data_object.y
     input_dim = X_train_scaled.shape[-1]
@@ -75,7 +75,7 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,scaler=MinM
 
     #kfold validation
     kf = KFold(n_splits=k,shuffle=True,random_state=1)
-    print("""penalty_anneal_iters \t penalty_weight \t l1_weight_feat \t l1_weight_tree \t val_accuracy \t NewBest""")
+    print("""penalty_anneal_iters \t penalty_weight \t l1_weight_feat \t l1_weight_tree \t val_accuracy \t \t NewBest""")
     for combination in combinations:
         params = dict(zip(keys,combination))
         cv_scores = []
@@ -88,7 +88,10 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,scaler=MinM
                 penalty_weight = params['penalty_weight']
                 l1_weight_feat = params['l1_weight_feat']
                 l1_weight_tree = params['l1_weight_tree']
-                depth_discount = params['depth_discount_factor']
+                try:
+                    depth_discount = params['depth_discount_factor']
+                except: 
+                    pass
                 try:
                     lmbda = params['lmbda']
                 except:
@@ -104,21 +107,27 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,scaler=MinM
                 try:
                     max_one_weight = params['max_one_weight']
                 except:
-                    max_one_weight = 0
+                    pass
 
-                envs = [DataLoader(TensorDataset(torch.tensor(X),torch.tensor(y)))for X,y in zip(X_train_fold,y_train_fold)]
+                envs = [DataLoader(TensorDataset(torch.tensor(X),torch.tensor(y)),batch_size=data_object.batch_size)
+                        for X,y in zip(X_train_fold,y_train_fold)]
                 tree_args = SoftTreeArgs(input_dim=input_dim,output_dim=output_dim,
                                          lr=lr,lmbda=lmbda)
                 soft_tree = SoftDecisionTree(tree_args)
-                for epoch in range(1,101):
-                    soft_tree.train_irm(envs,epoch,print_progress=False,return_stats=False,penalty_weight=penalty_weight,depth_discount_factor=depth_discount,
-                                        penalty_anneal_iters=penalty_anneal_iters, l1_weight_feat=l1_weight_feat,l1_weight_tree=l1_weight_tree)
+                for epoch in range(1,num_epochs+1):
+                    soft_tree.train_irm(envs,epoch,print_progress=False,return_stats=False,penalty_weight=penalty_weight,penalty_anneal_iters=penalty_anneal_iters,
+                                         l1_weight_feat=l1_weight_feat,l1_weight_tree=l1_weight_tree)
                 
                 num_envs,num_data = y_val_fold.shape
-                target_one_hot = torch.zeros(num_envs,num_data,tree_args.output_dim)
-                target_one_hot.scatter_(2,y_val_fold.view(num_envs,num_data,1),1.)
-                data = torch.cat(list(torch.tensor(X_val_fold)))
-                target = torch.cat(list(torch.tensor(y_val_fold)))
+                target_one_hot = torch.zeros(num_envs*num_data,tree_args.output_dim).to(soft_tree.args.device)
+                data = torch.cat(list(torch.tensor(X_val_fold).float())).to(soft_tree.args.device)
+                target = torch.cat(list(torch.tensor(y_val_fold))).to(soft_tree.args.device)
+                target_one_hot.scatter_(1,target.view(-1,1),1.)
+    
+                batch_size = target.shape[0]
+                if not batch_size == soft_tree.args.batch_size:
+                    soft_tree.define_extras(batch_size)
+
                 _,output = soft_tree.cal_loss(data,target_one_hot)
                 pred = output.data.max(1)[1] # get the index of the max log-probability
                 correct = pred.eq(target).cpu().sum()
@@ -134,12 +143,7 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,scaler=MinM
             best_params = params
             NewBest = True
         
-        print(f"""{penalty_anneal_iters} \t {penalty_weight} \t {l1_weight_feat} \t {l1_weight_tree} \t {accuracy} \t {NewBest} """)
-    pass
-
-# 1. Define the Hyperparameter Grid:
-param_grid = {
-    'l1_strength': [0.001, 0.01, 0.1, 1.0],  # L1 regularization strength
-    'other_reg_strength': [0.001, 0.01, 0.1, 1.0],  # Strength of your other regularization term
-    'learning_rate': [0.001, 0.01, 0.1]  # Example: learning rate if you're using gradient descent
-}
+        print(f"""{penalty_anneal_iters} \t \t \t {penalty_weight} \t \t \t {l1_weight_feat} \t \t \t {l1_weight_tree} \t \t \t {mean_cv_score:.2f}% \t \t  {str(NewBest)} """)
+    
+    print(f"Best Parameters: {best_params}")
+    return best_params
