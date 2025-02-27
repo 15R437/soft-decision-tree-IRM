@@ -109,7 +109,10 @@ class SoftDecisionTree(nn.Module):
         super(SoftDecisionTree, self).__init__()
         self.args = args
         self.root = InnerNode(1, self.args)
-        self.phi = nn.Parameter(torch.rand(self.args.input_dim)).to(self.args.device)
+        try:
+            self.phi = nn.Parameter(self.args.phi).to(self.args.device)
+        except:
+            self.phi = nn.Parameter(torch.rand(self.args.input_dim)).to(self.args.device)
         self.collect_parameters() ##collect parameters and modules under root node
         #self.optimizer = optim.Adam(self.parameters(),lr=self.args.lr)
         self.optimizer = optim.SGD(self.parameters(), lr=self.args.lr, momentum=self.args.momentum)
@@ -201,7 +204,7 @@ class SoftDecisionTree(nn.Module):
                     l1_loss += torch.norm(w,p=1)
 
             loss += l1_weight_tree*l1_loss
-            loss /= l1_weight_tree
+            #loss /= l1_weight_tree
             #loss.backward(retain_variables=True)
             loss.backward()
             self.optimizer.step()
@@ -274,7 +277,7 @@ class SoftDecisionTree(nn.Module):
                 for w in fc.weight:
                     l1_loss += torch.norm(w,p=1)
             loss += l1_weight_tree*l1_loss #+ max_one_weight*max_one_loss
-            loss /= l1_weight_feat*l1_weight_tree
+            #loss /= l1_weight_feat*l1_weight_tree
 
 
             self.optimizer.zero_grad()

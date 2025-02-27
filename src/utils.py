@@ -17,7 +17,7 @@ its left and right children (d=1) have id 1 and 2 respectively; their children (
 """
 class SoftTreeArgs():
     def __init__(self,input_dim,output_dim,
-                 batch_size=16,device='mps',lmbda=1,max_depth=3,lr=0.001,momentum=0.1,log_interval=5):
+                 batch_size=16,device='mps',lmbda=0.1,max_depth=3,lr=0.001,momentum=0.1,log_interval=5,phi=None):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.batch_size = batch_size
@@ -27,7 +27,11 @@ class SoftTreeArgs():
         self.lr = lr
         self.momentum = momentum
         self.log_interval = log_interval
-        
+        if phi == None:
+            self.phi = torch.rand(self.args.input_dim)
+        else:
+            self.phi = phi
+
 class PaddedTree():
     def __init__(self,feature,threshold,max_depth,dummy_nodes):
         self.feature = feature

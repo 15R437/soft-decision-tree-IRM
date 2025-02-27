@@ -96,21 +96,24 @@ X_test_raw,y_test_raw = test_data['raw_data']
 #hyperparemeter tuning
 data_object = tuning.DataObject(train_data_irm)
 param_grid = {
-    'penalty_anneal_iters': [95,100],
-    'penalty_weight': [10],
-    'l1_weight_feat': [100],
-    'l1_weight_tree': [200],
-    'lr':[0.1],
-    'num_epochs':[100]
+    'penalty_anneal_iters': [95],
+    'penalty_weight': [1,10,50],
+    'l1_weight_feat': [10,100],
+    'l1_weight_tree': [10,100],
+    'lr':[0.01,0.1],
+    'num_epochs':[100],
+    'lmbda': [0.1],
+    'depth_discount_factor': [1]
 
 }
 #best_params = tuning.tune(3,2,data_object,param_grid,k=3)
+#import pdb; pdb.set_trace()
 
 #soft_tree_irm vs soft_tree_erm vs hard_tree
 best_lr = 0.1
 best_l1_feat = 100
-best_l1_tree = 200
-best_penalty_weight = 10
+best_l1_tree = 100
+best_penalty_weight = 1
 best_penalty_anneal = 95
 tree_args = SoftTreeArgs(input_dim=3,output_dim=2,batch_size=100,lr=best_lr,max_depth=3,log_interval=1)
 
@@ -124,7 +127,7 @@ tree_acc, forest_acc = accuracy_score(y_test_raw,tree_preds),accuracy_score(y_te
 erm_test_accuracy = []
 irm_test_accuracy = []
 
-NUM_TRIALS = 100
+NUM_TRIALS = 10
 for trial in range(NUM_TRIALS):
     soft_tree_erm = SoftDecisionTree(tree_args)
     soft_tree_irm = SoftDecisionTree(tree_args)

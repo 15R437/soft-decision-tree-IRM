@@ -89,8 +89,9 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,scaler=MinM
                 l1_weight_feat = params['l1_weight_feat']
                 l1_weight_tree = params['l1_weight_tree']
                 try:
-                    depth_discount = params['depth_discount_factor']
+                    depth_discount_factor = params['depth_discount_factor']
                 except: 
+                    depth_discount_factor = 1
                     pass
                 try:
                     lmbda = params['lmbda']
@@ -104,10 +105,6 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,scaler=MinM
                     num_epochs = params['num_epochs']
                 except:
                     num_epochs = 100
-                try:
-                    max_one_weight = params['max_one_weight']
-                except:
-                    pass
 
                 envs = [DataLoader(TensorDataset(torch.tensor(X),torch.tensor(y)),batch_size=data_object.batch_size)
                         for X,y in zip(X_train_fold,y_train_fold)]
@@ -116,7 +113,7 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,scaler=MinM
                 soft_tree = SoftDecisionTree(tree_args)
                 for epoch in range(1,num_epochs+1):
                     soft_tree.train_irm(envs,epoch,print_progress=False,return_stats=False,penalty_weight=penalty_weight,penalty_anneal_iters=penalty_anneal_iters,
-                                         l1_weight_feat=l1_weight_feat,l1_weight_tree=l1_weight_tree)
+                                         l1_weight_feat=l1_weight_feat,l1_weight_tree=l1_weight_tree,depth_discount_factor=depth_discount_factor)
                 
                 num_envs,num_data = y_val_fold.shape
                 target_one_hot = torch.zeros(num_envs*num_data,tree_args.output_dim).to(soft_tree.args.device)
