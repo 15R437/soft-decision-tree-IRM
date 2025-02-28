@@ -1,6 +1,7 @@
 """Utility functions helpful for IRM training"""
 
 import torch
+from torch import nn
 import numpy as np
 import math
 from sklearn.tree import DecisionTreeClassifier
@@ -15,6 +16,19 @@ its left and right children (d=1) have id 1 and 2 respectively; their children (
                                             1               2
                                         3       4       5       6
 """
+class FeatureMask(nn.Module):
+    def __init__(self,input_dim):
+        super(FeatureMask,self).__init__()
+        self.input_dim = input_dim
+        self.mask = nn.Parameter(torch.rand(input_dim))
+        self.layers = [self]
+    def forward(self,x):
+        try:
+            assert x.shape[-1] == self.input_dim
+        except:
+            raise Exception(f"Expected x to be a tensor of shape (batch_size, {self.input_dim}).")
+        return self.mask*x
+
 class SoftTreeArgs():
     def __init__(self,input_dim,output_dim,
                  batch_size=16,device='mps',lmbda=0.1,max_depth=3,lr=0.001,momentum=0.1,log_interval=5,phi=None):
@@ -28,7 +42,7 @@ class SoftTreeArgs():
         self.momentum = momentum
         self.log_interval = log_interval
         if phi == None:
-            self.phi = torch.rand(self.args.input_dim)
+            self.phi = nn.Parameter(torch.rand(self.args.input_dim))
         else:
             self.phi = phi
 

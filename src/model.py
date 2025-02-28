@@ -110,9 +110,11 @@ class SoftDecisionTree(nn.Module):
         self.args = args
         self.root = InnerNode(1, self.args)
         try:
-            self.phi = nn.Parameter(self.args.phi).to(self.args.device)
+            self.phi = self.args.phi.to(self.args.device)
         except:
-            self.phi = nn.Parameter(torch.rand(self.args.input_dim)).to(self.args.device)
+            import pdb; pdb.set_trace()
+            raise Exception(f"Error with initialising featuriser")
+        
         self.collect_parameters() ##collect parameters and modules under root node
         #self.optimizer = optim.Adam(self.parameters(),lr=self.args.lr)
         self.optimizer = optim.SGD(self.parameters(), lr=self.args.lr, momentum=self.args.momentum)
@@ -137,8 +139,8 @@ class SoftDecisionTree(nn.Module):
     def cal_loss(self, x, y,include_featuriser=True):
         batch_size = y.size()[0]
         if include_featuriser: 
-            x = x*self.phi
-            #x = x@feature_selector(self.phi.weight*self.phi.mask).t() #hard feature selection chooses, for each row, the feature corresponding to the column of the maximum value on that row
+            x = self.phi(x)
+            
         leaf_accumulator = self.root.cal_prob(x, self.path_prob_init)
         loss = 0.
         max_prob = [-1. for _ in range(batch_size)]
@@ -164,7 +166,9 @@ class SoftDecisionTree(nn.Module):
         nodes = [self.root]
         self.module_list = nn.ModuleList()
         self.param_list = nn.ParameterList()
-        if include_featuriser: self.param_list.append(self.phi)
+        if include_featuriser: 
+            self.param_list.extend([param.data for param in self.phi.parameters()])
+            self.module_list.extend(self.phi.layers)
         while nodes:
             node = nodes.pop(0)
             if node.leaf:
