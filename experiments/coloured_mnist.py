@@ -3,10 +3,9 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import matplotlib.pyplot as plt
 from src.model import SoftDecisionTree
-from src.utils import SoftTreeArgs
-from src.utils import MLPFeaturiser
+from utils import SoftTreeArgs,MLPFeaturiser
 import numpy as np
-import tuning
+import utils.tuning as tuning
 import torch
 from torchvision import datasets
 from torch.utils.data import DataLoader, TensorDataset

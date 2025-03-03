@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-from src.utils import decision_tree_penalty, max_one_regularisation, feature_selector
+from utils import decision_tree_penalty, max_one_regularisation, feature_selector
 
 """class UpperTriangularWeight(nn.Module):
     def __init__(self, size):

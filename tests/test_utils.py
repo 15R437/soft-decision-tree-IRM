@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.utils import add_dummy_nodes, decision_tree_penalty
+from utils import add_dummy_nodes, decision_tree_penalty
 from src.model import SoftDecisionTree
 from sklearn.tree import DecisionTreeClassifier
 import pytest

@@ -7,9 +7,8 @@ import torch
 
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.tree import DecisionTreeClassifier
-from src.utils import add_dummy_nodes, decision_tree_penalty
+from utils import add_dummy_nodes, decision_tree_penalty,SoftTreeArgs
 from src.model import SoftDecisionTree
-from src.utils import SoftTreeArgs
 
 NUM_ENVS = 10
 rand_X = [torch.randn(100,4) for i in range(NUM_ENVS)]
@@ -32,3 +31,5 @@ for epoch in range(1,NUM_EPOCHS):
 print("IRM Training")
 for epoch in range(1,NUM_EPOCHS+1):
     soft_tree2.train_irm(envs,epoch,penalty_anneal_iters=50,l1_weight=0.01,max_one_weight=0.1)
+
+#test soft_tree.phi to check that it learns properly
