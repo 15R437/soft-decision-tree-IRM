@@ -60,14 +60,14 @@ class DataObject():
             raise Exception(f"""Expected either a Pytorch DataLoader object or a list of Pytorch DataLoader objects.
                              Instead got {type(data)}""")
 
-def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,scaler=MinMaxScaler(),k=5):
+def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,phi=None,scaler=MinMaxScaler(),k=5):
     if scaler==None:
         X_train_scaled = data_object.X
     else:
         X_train_scaled = np.array([scaler.fit_transform(x) for x in data_object.X])
     
     y_train = data_object.y
-    input_dim = X_train_scaled.shape[-1]
+    #input_dim = X_train_scaled.shape[-1]
     keys = param_grid.keys()
     combinations = list(itertools.product(*param_grid.values()))
     best_acc = 0
@@ -109,7 +109,7 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,scaler=MinM
                 envs = [DataLoader(TensorDataset(torch.tensor(X),torch.tensor(y)),batch_size=data_object.batch_size)
                         for X,y in zip(X_train_fold,y_train_fold)]
                 tree_args = SoftTreeArgs(input_dim=input_dim,output_dim=output_dim,
-                                         lr=lr,lmbda=lmbda)
+                                         lr=lr,lmbda=lmbda,phi=phi)
                 soft_tree = SoftDecisionTree(tree_args)
                 for epoch in range(1,num_epochs+1):
                     soft_tree.train_irm(envs,epoch,print_progress=False,return_stats=False,penalty_weight=penalty_weight,penalty_anneal_iters=penalty_anneal_iters,

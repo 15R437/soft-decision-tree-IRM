@@ -38,7 +38,14 @@ def func_stochastic(x):
         y = torch_bernoulli(0.1,1)
     return y.long()
 
-def make_environments(n_samples:int,e_list:list,scaler=MinMaxScaler(),batch_size=None,random_seed=None):
+def func_sigmoid(w):
+    def sigmoid(x):
+        x = x.view(1,-1)
+        w = w.view(x.shape[1],1)
+        return torch_bernoulli(torch.sigmoid(x@w).view(-1))
+    return sigmoid
+
+def make_environments(n_samples:int,e_list:list,y_func,scaler=MinMaxScaler(),batch_size=None,random_seed=None):
     """we initialise a spurious variable x[2] = y and then flip its value w.p. e where 
     e defines the environment. x[0] is sampled uniformly from [0,1) and x[1] ~ Bernoulli(1-x[0]).
 
@@ -62,7 +69,7 @@ def make_environments(n_samples:int,e_list:list,scaler=MinMaxScaler(),batch_size
             raise Exception(f"e should be a list of probabilities. Instead got {e} in position {id}.")
         x_0 =  torch.rand(n_samples,1)
         x_1 = torch_bernoulli(1-x_0)
-        y = torch.cat([func_stochastic(x) for x in torch.cat([x_0,x_1],dim=1)],dim=0)
+        y = torch.cat([y_func(x) for x in torch.cat([x_0,x_1],dim=1)],dim=0)
         x_2 = (y-torch_bernoulli(e,size=y.size()[0])).abs().view(-1,1)
         if scaler==None:
             X = torch.cat([x_0,x_1,x_2],dim=1)
@@ -83,8 +90,8 @@ n_samples = 1000
 training_envs = [0.1,0.2,0.3] #if we bring an umbrella, we are likely to also bring a raincoat
 test_envs = [0.9] # if we bring an umbrella, we are unlikely to also bring a raincoat
 
-train_data = make_environments(n_samples,training_envs,random_seed=0)
-test_data = make_environments(n_samples,test_envs)
+train_data = make_environments(n_samples=10000,e_list=training_envs,y_func=func_stochastic,batch_size=1000,random_seed=0)
+test_data = make_environments(n_samples=1000,e_list=test_envs,y_func=func_stochastic)
 
 train_data_irm = train_data['irm_envs']
 train_data_erm = train_data['erm_loader']
@@ -96,11 +103,11 @@ X_test_raw,y_test_raw = test_data['raw_data']
 #hyperparemeter tuning
 data_object = tuning.DataObject(train_data_irm)
 param_grid = {
-    'penalty_anneal_iters': [95],
-    'penalty_weight': [1,10,50],
-    'l1_weight_feat': [10,100],
-    'l1_weight_tree': [10,100],
-    'lr':[0.01,0.1],
+    'penalty_anneal_iters': [50,95],
+    'penalty_weight': [0.1,1,10],
+    'l1_weight_feat': [0.01,0.1],
+    'l1_weight_tree': [0.01,0.1],
+    'lr':[0.1],
     'num_epochs':[100],
     'lmbda': [0.1],
     'depth_discount_factor': [1]
@@ -110,11 +117,11 @@ param_grid = {
 #import pdb; pdb.set_trace()
 
 #soft_tree_irm vs soft_tree_erm vs hard_tree
-best_lr = 0.1
-best_l1_feat = 100
-best_l1_tree = 100
-best_penalty_weight = 1
-best_penalty_anneal = 95
+best_lr = 0.05 #0.1
+best_l1_feat = 100 #100
+best_l1_tree = 10 #10
+best_penalty_weight = 1 #1
+best_penalty_anneal = 95 #95
 tree_args = SoftTreeArgs(input_dim=3,output_dim=2,batch_size=100,lr=best_lr,max_depth=3,log_interval=1)
 
 hard_tree,random_forest = DecisionTreeClassifier(max_depth=tree_args.max_depth,random_state=0), RandomForestClassifier(n_estimators=10,random_state=0)

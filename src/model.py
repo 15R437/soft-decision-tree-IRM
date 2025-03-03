@@ -112,7 +112,6 @@ class SoftDecisionTree(nn.Module):
         try:
             self.phi = self.args.phi.to(self.args.device)
         except:
-            import pdb; pdb.set_trace()
             raise Exception(f"Error with initialising featuriser")
         
         self.collect_parameters() ##collect parameters and modules under root node
@@ -140,7 +139,7 @@ class SoftDecisionTree(nn.Module):
         batch_size = y.size()[0]
         if include_featuriser: 
             x = self.phi(x)
-            
+
         leaf_accumulator = self.root.cal_prob(x, self.path_prob_init)
         loss = 0.
         max_prob = [-1. for _ in range(batch_size)]
@@ -168,7 +167,7 @@ class SoftDecisionTree(nn.Module):
         self.param_list = nn.ParameterList()
         if include_featuriser: 
             self.param_list.extend([param.data for param in self.phi.parameters()])
-            self.module_list.extend(self.phi.layers)
+            #self.module_list.extend(self.phi.layers) instead, I access self.phi.layers directly for the l1_loss
         while nodes:
             node = nodes.pop(0)
             if node.leaf:
@@ -256,33 +255,40 @@ class SoftDecisionTree(nn.Module):
                 self.target_onehot.data.zero_()            
                 self.target_onehot.scatter_(1, target_, 1.)
                 if id==0:
-                    loss,output = self.cal_loss(data, self.target_onehot)
+                    train_loss,output = self.cal_loss(data, self.target_onehot)
                     all_targets = target.clone().view(1,-1) #each row represents an environment, the columns are the targets
                 else:
                     new_loss,new_output = self.cal_loss(data, self.target_onehot)
-                    loss += new_loss
+                    train_loss += new_loss
                     output = torch.cat([output,new_output],dim=0)
                     all_targets = torch.cat([all_targets,target.clone().view(1,-1)],dim=0)
                 if epoch > penalty_anneal_iters:
-                    data = data*self.phi
-                    #data = data @feature_selector(self.phi.weight*self.phi.mask).t() #hard feature selection
-                    loss += penalty_weight*decision_tree_penalty(self,data,self.target_onehot,depth_discount_factor)
-                    if penalty_weight>1.0: loss /= penalty_weight
+                    data = self.phi(data)
+                    penalty = decision_tree_penalty(self,data,self.target_onehot,depth_discount_factor)
+                    #if penalty_weight>1.0: loss /= penalty_weight
+                else:
+                    penalty=torch.tensor(0.).to(self.args.device)
             
             #featuriser regularisation
-            l1_loss = torch.norm(self.phi,p=1)
-            loss += l1_weight_feat*l1_loss
+            l1_loss_feat = torch.tensor(0.).to(self.args.device)
+            for module in self.phi.layers:
+                try: 
+                    module.weight
+                except: 
+                    continue
+                for w in module.weight:
+                    l1_loss_feat += torch.norm(w,p=1)
 
             #regularisation for soft tree weights
-            l1_loss = torch.tensor(0.).to(self.args.device)
-            #max_one_loss = torch.tensor(0.).to(self.args.device)
+            l1_loss_tree = torch.tensor(0.).to(self.args.device)
             for fc in self.module_list:
-                #max_one_loss+= max_one_regularisation(fc.weight).to(self.args.device)
                 for w in fc.weight:
-                    l1_loss += torch.norm(w,p=1)
-            loss += l1_weight_tree*l1_loss #+ max_one_weight*max_one_loss
-            #loss /= l1_weight_feat*l1_weight_tree
+                    l1_loss_tree += torch.norm(w,p=1)
 
+            avg_train_loss = train_loss/(num_envs)
+            avg_penalty = penalty_weight*penalty/(num_envs)
+
+            loss = avg_train_loss + avg_penalty + l1_weight_feat*l1_loss_feat + l1_weight_tree*l1_loss_tree
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -298,8 +304,8 @@ class SoftDecisionTree(nn.Module):
                 if batch_idx % self.args.log_interval == 0:
                     num_data_processed = batch_idx*num_envs*batch_size
                     total_data = num_envs*batch_size*NUM_BATCHES
-                    formatted_accuracy = "%, ".join(list(map(lambda acc: f"{acc.item():.2f}",accuracy)))
-                    print(f"""Train Epoch: {epoch} [{num_data_processed}/{total_data} ({100.*batch_idx/NUM_BATCHES:.0f}%)]\t Loss: {loss.data.item():.6f}, Accuracy: {correct.sum().item()}/{batch_size*num_envs} ({100.*correct.sum().item()/(batch_size*num_envs):.2f})%""")
+                    #formatted_accuracy = "%, ".join(list(map(lambda acc: f"{acc.item():.2f}",accuracy)))
+                    print(f"""Train Epoch: {epoch} [{num_data_processed}/{total_data} ({100.*batch_idx/NUM_BATCHES:.0f}%)]\t Avg Train Loss: {avg_train_loss.data.item():.4f}, Avg Penalty: {avg_penalty.data.item():.4f}, L1 Feat Loss: {(l1_weight_feat*l1_loss_feat).data.item():.2f}, L1 Tree Loss: {(l1_weight_tree*l1_loss_tree).data.item():.2f}, Accuracy: {correct.sum().item()}/{batch_size*num_envs} ({100.*correct.sum().item()/(batch_size*num_envs):.2f})%""")
         if return_stats:
             return {'loss':loss, 'acc':accuracy}
 
