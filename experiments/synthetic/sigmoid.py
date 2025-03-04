@@ -18,9 +18,11 @@ from utils.general import FeatureMask
 curr_dir = os.path.dirname(os.path.abspath(__file__))
 file_path = os.path.join(curr_dir,"data/sigmoid_data.pickle")
 if os.path.exists(file_path):
+    print("loading existing data..")
     with open(file_path,'rb') as file:
         x_axis,sigmoid_weights,train_data_list,test_data_list,best_params_list = pickle.load(file)
 else:
+    print(f"generating new data..")
     train_envs = [0.1,0.2,0.3] #if we bring an umbrella, we are likely to also bring a raincoat
     test_envs = [0.9] # if we bring an umbrella, we are unlikely to also bring a raincoat
     param_grid = {

@@ -14,6 +14,8 @@ import pickle
 from generate_data import generate_and_save,func_stochastic,func_sigmoid
 from utils.general import FeatureMask
 
+print("Script running..")
+
 #LOADING DATA
 curr_dir = os.path.dirname(os.path.abspath(__file__))
 file_path = os.path.join(curr_dir,"data/umbrella_data.pickle")
