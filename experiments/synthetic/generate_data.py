@@ -12,12 +12,9 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 experiments_dir = os.path.dirname(script_dir)
 working_dir = os.path.dirname(experiments_dir)
 utils_dir = os.path.join(working_dir,'utils')
-print(f"script_dir: {script_dir}")
-print(f"experiments_dir: {experiments_dir}")
-print(f"working_dir: {working_dir}")
-print(f"utils_dir: {utils_dir}")
 sys.path.append(utils_dir)
-import utils
+
+import utils.tuning as tuning
 
 #Deterministic Function
 def func(x):
@@ -44,11 +41,11 @@ def func_stochastic(x):
         y = torch_bernoulli(0.1,1)
     return y.long()
 
-def func_sigmoid(w):
+def func_sigmoid(w,b):
     def sigmoid(x):
         x = x.view(1,-1)
         w = w.view(x.shape[1],1)
-        return torch_bernoulli(torch.sigmoid(x@w).view(-1))
+        return torch_bernoulli(torch.sigmoid(x@w+b).view(-1))
     return sigmoid
 
 def make_environments(n_samples:int,e_list:list,y_func,scaler=MinMaxScaler(),batch_size=None,random_seed=None):
@@ -92,7 +89,7 @@ def make_environments(n_samples:int,e_list:list,y_func,scaler=MinMaxScaler(),bat
 
     return {'irm_envs':envs, 'erm_loader':erm_loader, 'raw_data':(np.array(X_),np.array(y_))}
 
-def generate_and_save(n_train_samples,n_test_samples,train_envs,test_envs,y_func,param_grid={},file_name='data.pickle',batch_size=None,random_seed=None):
+def generate_and_save(n_train_samples,n_test_samples,train_envs,test_envs,y_func,param_grid={},save_as=None,batch_size=None,random_seed=None):
     train_data = make_environments(n_samples=n_train_samples,e_list=train_envs,y_func=y_func,batch_size=batch_size,random_seed=random_seed)
     test_data = make_environments(n_samples=n_test_samples,e_list=test_envs,y_func=y_func,batch_size=batch_size,random_seed=None) #test data is random
 
@@ -102,14 +99,19 @@ def generate_and_save(n_train_samples,n_test_samples,train_envs,test_envs,y_func
     data_object = tuning.DataObject(train_data_irm)
     best_params = tuning.tune(3,2,data_object,param_grid,k=3)
 
+    train_test_tune_data = (train_data,test_data,best_params)
+    if save_as==None:
+        return train_test_tune_data
 
     #saving train,test and tuning data
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(script_dir, file_name)
-    train_test_tune_data = (train_data,test_data,best_params)
+    file_path = os.path.join(script_dir, save_as)
+    
 
     with open(file_path,"wb") as file:
         pickle.dump(train_test_tune_data,file)
+    
+    return train_test_tune_data
 
 #Umbrella Use Data
 
@@ -128,4 +130,4 @@ param_grid = {
     }
 
 generate_and_save(n_train_samples=10000,n_test_samples=1000,train_envs=train_envs,test_envs=test_envs,
-          y_func=func_stochastic,param_grid=param_grid,file_name="umbrella_data.pickle",batch_size=1000,random_seed=0)
+          y_func=func_stochastic,param_grid=param_grid,save_as="umbrella_data.pickle",batch_size=1000,random_seed=0)

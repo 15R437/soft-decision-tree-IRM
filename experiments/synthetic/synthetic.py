@@ -116,7 +116,7 @@ param_grid = {
 #best_params = tuning.tune(3,2,data_object,param_grid,k=3)
 #import pdb; pdb.set_trace()
 
-#soft_tree_irm vs soft_tree_erm vs hard_tree
+#soft tree (irm) vs soft tree (erm) vs hard tree vs random forest
 best_lr = 0.05 #0.1
 best_l1_feat = 100 #100
 best_l1_tree = 10 #10
