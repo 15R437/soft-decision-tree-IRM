@@ -117,7 +117,7 @@ param_grid = {
 #import pdb; pdb.set_trace()
 
 #soft tree (irm) vs soft tree (erm) vs hard tree vs random forest
-best_lr = 0.05 #0.1
+best_lr = 0.1 #0.1
 best_l1_feat = 100 #100
 best_l1_tree = 10 #10
 best_penalty_weight = 1 #1
@@ -134,7 +134,7 @@ tree_acc, forest_acc = accuracy_score(y_test_raw,tree_preds),accuracy_score(y_te
 erm_test_accuracy = []
 irm_test_accuracy = []
 
-NUM_TRIALS = 10
+NUM_TRIALS = 1
 for trial in range(NUM_TRIALS):
     soft_tree_erm = SoftDecisionTree(tree_args)
     soft_tree_irm = SoftDecisionTree(tree_args)

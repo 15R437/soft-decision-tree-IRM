@@ -14,8 +14,6 @@ import pickle
 from generate_data import generate_and_save,func_stochastic,func_sigmoid
 from utils.general import FeatureMask
 
-print("Script running..")
-
 #LOADING DATA
 curr_dir = os.path.dirname(os.path.abspath(__file__))
 file_path = os.path.join(curr_dir,"data/umbrella_data.pickle")
@@ -28,7 +26,7 @@ else:
     train_envs = [0.1,0.2,0.3] #if we bring an umbrella, we are likely to also bring a raincoat
     test_envs = [0.9] # if we bring an umbrella, we are unlikely to also bring a raincoat
     param_grid = {
-        'penalty_anneal_iters': [50,95],
+        'penalty_anneal_iters': [95],
         'penalty_weight': [1],
         'l1_weight_feat': [100],
         'l1_weight_tree': [10],
@@ -54,7 +52,7 @@ best_penalty_weight = best_params['penalty_weight'] #1
 best_penalty_anneal = best_params['penalty_anneal_iters'] #95
 tree_args = SoftTreeArgs(input_dim=3,output_dim=2,batch_size=1000,lr=best_lr,max_depth=3,log_interval=1)
 
-#EXPERIMENT 1: soft tree (irm) vs soft tree (erm) vs hard tree vs random forest
+#EXPERIMENT 1: soft tree (irm) vs soft tree (erm) vs hard tree vs random forest test accuracy
 def experiment_1(num_trials):
     print("Running Experiment 1..")
     hard_tree,random_forest = DecisionTreeClassifier(max_depth=tree_args.max_depth,random_state=0), RandomForestClassifier(n_estimators=10,random_state=0)
@@ -88,12 +86,29 @@ def experiment_1(num_trials):
     print(f"soft tree (erm) acc: {np.mean(erm_test_accuracy):0.2f}%")
     print(f"soft tree (irm) acc: {np.mean(irm_test_accuracy):0.2f}%")
 
-#EXPERIMENT 2: initialising feature mask weights to 0.
+    results_file_path = os.path.join(curr_dir,'results/umbrella-experiment-1.pickle')
+
+    models = ['hard tree', 'random forest', 'soft tree (erm)', 'soft tree (irm)']
+    acc = [100*tree_acc,100*forest_acc,np.mean(erm_test_accuracy),np.mean(irm_test_accuracy)]
+    with open(results_file_path,"wb") as file:
+        pickle.dump((models,acc),file)
+
+    plt.bar(models,acc)
+    plt.title("Test Accuracy (Umbrella Prediction)")
+    plt.xlabel("model")
+    plt.ylabel("test accuracy (%)")
+
+    plot_file_path = os.path.join(curr_dir,'plots/umbrella-experiment-1')
+    plt.savefig(plot_file_path)
+    plt.show()
+
+
+#EXPERIMENT 2: initialising feature mask weights and seeing how this affects learning and final accuracy
 def experiment_2(num_trials,init_weights:list,ideal_weight=np.array([1,1,0]),num_epochs=100):
     """
     Takes a list (init_weights) of 1D tensors of size input_dim. These are passed as the initial
     weights of a feature mask for a soft decision tree which is then trained for num_epochs epochs.
-    The softmax-negative cross-entropy loss between the learned weights and ideal_weights is
+    The softmax-negative-cross-entropy loss between the learned weights and ideal_weights is
     calculated after each epoch. After num_epochs, the test accuracy is also calculated.
     """
 
@@ -101,7 +116,9 @@ def experiment_2(num_trials,init_weights:list,ideal_weight=np.array([1,1,0]),num
 
     irm_test_accuracy = []
     weight_loss = []
-    for w in init_weights:
+    figure = plt.figure()
+    num_plots = len(init_weights)
+    for i,w in enumerate(init_weights):
         phi = FeatureMask(input_dim=3,init_weight=nn.Parameter(w))
         tree_args = SoftTreeArgs(input_dim=3,output_dim=2,batch_size=1000,lr=best_lr,max_depth=3,log_interval=1,phi=phi)
 
@@ -128,12 +145,18 @@ def experiment_2(num_trials,init_weights:list,ideal_weight=np.array([1,1,0]),num
         irm_test_accuracy.append(np.mean(acc))
 
         #plotting epochs vs weight loss
+        figure.add_subplot(1,num_plots,id+1)
         plt.plot([1.*i for i in range(1,num_epochs+1)],np.mean(loss,axis=1))
         plt.xlabel('epoch')
         plt.ylabel('feature weight loss (nce)')
-        plt.show()
     
-    return irm_test_accuracy,weight_loss
+    results_file_path = os.path.join(curr_dir,'results/umbrella-experiment-1.pickle')
+    with open(results_file_path,"wb") as file:
+        pickle.dump({'weight_loss':weight_loss,'irm_test_accuracy':irm_test_accuracy},file)
+
+    plot_file_path = os.path.join(curr_dir,'plots/umbrella-experiment-2')
+    plt.savefig(plot_file_path)
+    plt.show()
 
 
 #EXPERIMENT 3: graphing test accuracy against penalty_anneal_iters
@@ -157,3 +180,8 @@ def experiment_3(num_trials,anneal_list=[i for i in range(0,110,10)],num_epochs=
     plt.title(f"Test accuracy versus penalty_anneal_iters over {num_epochs}")
     plt.show()
     return mean_accuracy
+
+
+#RUN EXPERIMENTS HERE
+experiment_1(10)
+experiment_2(10,init_weights=[torch.tensor([.5,.5,.5]),torch.tensor([0.,0.,0.]),torch.tensor([1.,1.,1.])])

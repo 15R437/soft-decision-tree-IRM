@@ -1,7 +1,5 @@
 import sys
 import os
-import matplotlib.pyplot as plt
-import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -42,7 +40,7 @@ def func_stochastic(x):
     return y.long()
 
 def func_sigmoid(w,b):
-    def sigmoid(x):
+    def sigmoid(x,w=w):
         x = x.view(1,-1)
         w = w.view(x.shape[1],1)
         return torch_bernoulli(torch.sigmoid(x@w+b).view(-1))
@@ -112,22 +110,3 @@ def generate_and_save(n_train_samples,n_test_samples,train_envs,test_envs,y_func
         pickle.dump(train_test_tune_data,file)
     
     return train_test_tune_data
-
-#Umbrella Use Data
-
-train_envs = [0.1,0.2,0.3] #if we bring an umbrella, we are likely to also bring a raincoat
-test_envs = [0.9] # if we bring an umbrella, we are unlikely to also bring a raincoat
-param_grid = {
-        'penalty_anneal_iters': [50,95],
-        'penalty_weight': [0.1,1,10],
-        'l1_weight_feat': [0.01,0.1],
-        'l1_weight_tree': [0.01,0.1],
-        'lr':[0.1],
-        'num_epochs':[100],
-        'lmbda': [0.1],
-        'depth_discount_factor': [1]
-
-    }
-
-generate_and_save(n_train_samples=10000,n_test_samples=1000,train_envs=train_envs,test_envs=test_envs,
-          y_func=func_stochastic,param_grid=param_grid,save_as="umbrella_data.pickle",batch_size=1000,random_seed=0)

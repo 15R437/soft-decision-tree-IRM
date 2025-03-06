@@ -26,7 +26,7 @@ else:
     train_envs = [0.1,0.2,0.3] #if we bring an umbrella, we are likely to also bring a raincoat
     test_envs = [0.9] # if we bring an umbrella, we are unlikely to also bring a raincoat
     param_grid = {
-        'penalty_anneal_iters': [50,95],
+        'penalty_anneal_iters': [95],
         'penalty_weight': [1],
         'l1_weight_feat': [100],
         'l1_weight_tree': [10],
@@ -80,8 +80,8 @@ def experiment(num_trials):
 
         tree_preds,forest_preds = hard_tree.predict(X_test_raw),random_forest.predict(X_test_raw)
         tree_acc, forest_acc = accuracy_score(y_test_raw,tree_preds),accuracy_score(y_test_raw,forest_preds)
-        hard_tree_acc.append(tree_acc)
-        random_forest_acc.append(forest_acc)
+        hard_tree_acc.append(100*tree_acc)
+        random_forest_acc.append(100*forest_acc)
 
         erm_test_accuracy = []
         irm_test_accuracy = []
@@ -102,8 +102,23 @@ def experiment(num_trials):
         
         irm_acc.append(np.mean(irm_test_accuracy))
         erm_acc.append(np.mean(erm_test_accuracy))
-    
+
+    #saving results   
+    file_path = os.path.join(curr_dir,'results/sigmoid-experiment.pickle')
+    with open(file_path,"wb") as file:
+        pickle.dump((x_axis,irm_acc,erm_acc,hard_tree_acc,random_forest_acc),file)
+
     plt.plot(x_axis,irm_acc,label="soft tree (irm)")
     plt.plot(x_axis,erm_acc,label="soft tree (erm)")
     plt.plot(x_axis,hard_tree_acc,label="hard tree")
     plt.plot(x_axis,random_forest_acc,label="random forest")
+    plt.xlabel("k")
+    plt.ylabel("test accuracy (%)")
+    plt.legend()
+    
+    plot_file_path = os.path.join(curr_dir,'plots/sigmoid-experiment')
+    plt.savefig(plot_file_path)
+    plt.show()
+
+#RUN EXPERIMENT HERE
+experiment(10)
