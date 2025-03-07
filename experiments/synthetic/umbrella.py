@@ -91,10 +91,10 @@ def experiment_1(num_trials):
     models = ['hard tree', 'random forest', 'soft tree (erm)', 'soft tree (irm)']
     acc = [100*tree_acc,100*forest_acc,np.mean(erm_test_accuracy),np.mean(irm_test_accuracy)]
     with open(results_file_path,"wb") as file:
-        pickle.dump((models,acc),file)
+        pickle.dump({'models':models,'accuracy':acc,'hard_tree':hard_tree},file)
 
     plt.bar(models,acc)
-    plt.title("Test Accuracy (Umbrella Prediction)")
+    plt.title("Umbrella Use Prediction")
     plt.xlabel("model")
     plt.ylabel("test accuracy (%)")
 
@@ -130,7 +130,7 @@ def experiment_2(num_trials,init_weights:list,ideal_weight=np.array([1,1,0]),num
             for epoch in range(1,num_epochs+1):
                 soft_tree_irm.train_irm(train_data_irm,epoch,penalty_anneal_iters=best_penalty_anneal,l1_weight_feat=best_l1_feat,
                                         l1_weight_tree=best_l1_tree,penalty_weight=best_penalty_weight)
-                learned_weight = soft_tree_irm.phi.weight.detach().numpy()
+                learned_weight = soft_tree_irm.phi.weight.detach().cpu().numpy()
 
                 #computing softmax and then negative cross-entropy
                 learned_prob = np.exp(learned_weight-np.max(learned_weight))/np.exp(learned_weight-np.max(learned_weight)).sum()
@@ -145,7 +145,7 @@ def experiment_2(num_trials,init_weights:list,ideal_weight=np.array([1,1,0]),num
         irm_test_accuracy.append(np.mean(acc))
 
         #plotting epochs vs weight loss
-        figure.add_subplot(1,num_plots,id+1)
+        figure.add_subplot(1,num_plots,i+1)
         plt.plot([1.*i for i in range(1,num_epochs+1)],np.mean(loss,axis=1))
         plt.xlabel('epoch')
         plt.ylabel('feature weight loss (nce)')
@@ -174,14 +174,24 @@ def experiment_3(num_trials,anneal_list=[i for i in range(0,110,10)],num_epochs=
             irm_test_accuracy[id].append(soft_tree_irm.test_(test_loader,print_result=False,return_acc=True))
     
     mean_accuracy = np.mean(irm_test_accuracy,axis=1)
+    results_file_path = os.path.join(curr_dir,'results/umbrella-experiment-3.pickle')
+    with open(results_file_path,"wb") as file:
+        pickle.dump({'penalty_anneal_iters':anneal_list,'mean_accuracy':mean_accuracy},file)
+        
     plt.plot(anneal_list,mean_accuracy)
     plt.xlabel("penalty_anneal_iters")
     plt.ylabel("mean test accuracy")
     plt.title(f"Test accuracy versus penalty_anneal_iters over {num_epochs}")
+
+    plot_file_path = os.path.join(curr_dir,'plots/umbrella-experiment-3')
+    plt.savefig(plot_file_path)
     plt.show()
     return mean_accuracy
 
 
 #RUN EXPERIMENTS HERE
-experiment_1(10)
-experiment_2(10,init_weights=[torch.tensor([.5,.5,.5]),torch.tensor([0.,0.,0.]),torch.tensor([1.,1.,1.])])
+#experiment_1(10)
+#experiment_2(10,init_weights=[torch.tensor([.5,.5,.5]),torch.tensor([0.,0.,0.]),torch.tensor([1.,1.,1.])])
+experiment_3(10)
+
+#PLOT GRAPHS HERE
