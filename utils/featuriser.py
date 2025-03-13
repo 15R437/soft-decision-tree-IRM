@@ -51,25 +51,28 @@ class FeatureMask(nn.Module):
         return nn.ReLU()(self.weight*x)
 
 class MLPFeaturiser(nn.Module):
-    def __init__(self,input_dim,output_dim,hidden_dims):
+    def __init__(self,input_dim,output_dim,hidden_dims,init_layers=None):
         super(MLPFeaturiser,self).__init__()
         self.input_dim = input_dim
-        self.layers = nn.ModuleList()
-        self.layers.append(nn.Linear(input_dim,hidden_dims[0]))
-        self.layers.append(nn.ReLU())
-        try:
-            assert len(hidden_dims)==len(hidden_dims)
-            for i in range(1,len(hidden_dims)-1):
-                self.layers.append(nn.Linear(hidden_dims[i],hidden_dims[i+1]))
-                self.layers.append(nn.ReLU())
-            self.layers.append(nn.Linear(hidden_dims[-1],output_dim))
-            self.layers.append(nn.ReLU()) #latent representation is non-negative
-        except:
-            try: 
-                assert type(hidden_dims)==int
-                self.layers.append(nn.Linear(hidden_dims,output_dim))
+        if init_layers!=None:
+            self.layers = init_layers
+        else:
+            self.layers = nn.ModuleList()
+            self.layers.append(nn.Linear(input_dim,hidden_dims[0]))
+            self.layers.append(nn.ReLU())
+            try:
+                assert len(hidden_dims)==len(hidden_dims)
+                for i in range(1,len(hidden_dims)-1):
+                    self.layers.append(nn.Linear(hidden_dims[i],hidden_dims[i+1]))
+                    self.layers.append(nn.ReLU())
+                self.layers.append(nn.Linear(hidden_dims[-1],output_dim))
+                self.layers.append(nn.ReLU()) #latent representation is non-negative
             except:
-                raise Exception(f"Expected hidden_dims to be a list of integer dimensions or else a single integer. Instead got type {type(hidden_dims)}")
+                try: 
+                    assert type(hidden_dims)==int
+                    self.layers.append(nn.Linear(hidden_dims,output_dim))
+                except:
+                    raise Exception(f"Expected hidden_dims to be a list of integer dimensions or else a single integer. Instead got type {type(hidden_dims)}")
             
         self.minmax_norm =MinMaxNormalisation()
 

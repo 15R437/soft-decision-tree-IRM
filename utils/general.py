@@ -1,4 +1,4 @@
-from featuriser import FeatureMask
+from utils.featuriser import FeatureMask
 from sklearn.tree import DecisionTreeClassifier
 import torch
 import math

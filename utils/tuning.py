@@ -82,10 +82,13 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,phi=None,sc
             X_train_fold, X_val_fold = X_train_scaled[train_id],X_train_scaled[val_id]
             y_train_fold, y_val_fold = y_train[train_id],y_train[val_id]
             if data_object.training_type=='irm': #each row of X_train_fold is an environment
-                penalty_anneal_iters = params['penalty_anneal_iters']
-                penalty_weight = params['penalty_weight']
-                l1_weight_feat = params['l1_weight_feat']
-                l1_weight_tree = params['l1_weight_tree']
+                try:
+                    penalty_anneal_iters = params['penalty_anneal_iters']
+                    penalty_weight = params['penalty_weight']
+                    l1_weight_feat = params['l1_weight_feat']
+                    l1_weight_tree = params['l1_weight_tree']
+                except:
+                    raise Exception(f"Expected possible values for penalty_anneal_iters, penalty_weight, l1_weight_feat and l1_weight_tree to be provided. Instead got {param_grid}.")
                 try:
                     depth_discount_factor = params['depth_discount_factor']
                 except: 

@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-from utils import decision_tree_penalty, max_one_regularisation, feature_selector
+from utils.general import decision_tree_penalty
 
 """class UpperTriangularWeight(nn.Module):
     def __init__(self, size):
@@ -337,7 +337,7 @@ class SoftDecisionTree(nn.Module):
         self.test_acc.append(accuracy)
 
         if accuracy > self.best_accuracy:
-            self.save_best('./result')
+            #self.save_best('./result')
             self.best_accuracy = accuracy
         if return_acc:
             return self.best_accuracy

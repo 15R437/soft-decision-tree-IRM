@@ -177,7 +177,7 @@ def experiment_3(num_trials,anneal_list=[i for i in range(0,110,10)],num_epochs=
     results_file_path = os.path.join(curr_dir,'results/umbrella-experiment-3.pickle')
     with open(results_file_path,"wb") as file:
         pickle.dump({'penalty_anneal_iters':anneal_list,'mean_accuracy':mean_accuracy},file)
-        
+
     plt.plot(anneal_list,mean_accuracy)
     plt.xlabel("penalty_anneal_iters")
     plt.ylabel("mean test accuracy")
@@ -191,7 +191,7 @@ def experiment_3(num_trials,anneal_list=[i for i in range(0,110,10)],num_epochs=
 
 #RUN EXPERIMENTS HERE
 #experiment_1(10)
-#experiment_2(10,init_weights=[torch.tensor([.5,.5,.5]),torch.tensor([0.,0.,0.]),torch.tensor([1.,1.,1.])])
-experiment_3(10)
+experiment_2(10,init_weights=[torch.tensor([.5,.5,.5]),torch.tensor([0.,0.,0.]),torch.tensor([1.,1.,1.])])
+#experiment_3(10)
 
 #PLOT GRAPHS HERE
