@@ -192,8 +192,14 @@ def experiment_3(num_trials,anneal_list=[i for i in range(0,110,10)],num_epochs=
 #fit a hard tree and compute the decision tree penalty between this hard tree and the soft tree over phi
 def experiment_4(c_list):
     init_tree_weights = {}
-    for i in range(15):
-        pass
+    weight_values = [torch.tensor([0.,1.,0.]),torch.tensor([1.,0.,0.]),None,None,torch.tensor([1.,0.,0.]),None,None,None,None,None,None,None,None,None,None]
+    bias_values = [torch.tensor(0.),torch.tensor(0.2),None,None,torch.tensor(0.5),None,None,None,None,None,None,None,None,None,None]
+    for pos in range(15):
+        init_tree_weights[pos] = nn.Linear(3,1)
+        if weight_values[pos]!=None:
+            init_tree_weights[pos].weight.data = weight_values[pos].clone()
+            init_tree_weights[pos].bias.data = bias_values[pos].clone()
+
     penalty = []
     for c in c_list:
         phi = FeatureMask(input_dim=3,init_weight=nn.Parameter(torch.tensor([1.,1.,c*1.])))
