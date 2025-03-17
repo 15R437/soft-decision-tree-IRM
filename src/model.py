@@ -31,7 +31,7 @@ class InnerNode():
         if self.args.init_weights == None:
             self.fc = nn.Linear(self.args.input_dim, 1).to(self.args.device)
         else:
-            self.fc = self.args.init_weights[pos]
+            self.fc = self.args.init_weights[pos].to(self.args.device)
         beta = torch.randn(1).to(self.args.device)
         #beta = beta.expand((self.args.batch_size, 1))
         self.beta = nn.Parameter(beta)
@@ -113,10 +113,7 @@ class SoftDecisionTree(nn.Module):
         super(SoftDecisionTree, self).__init__()
         self.args = args
         self.root = InnerNode(1, self.args,0)
-        try:
-            self.phi = self.args.phi.to(self.args.device)
-        except:
-            raise Exception(f"Error with initialising featuriser")
+        self.phi = self.args.phi.to(self.args.device)
         
         self.collect_parameters() ##collect parameters and modules under root node
         #self.optimizer = optim.Adam(self.parameters(),lr=self.args.lr)
@@ -231,7 +228,7 @@ class SoftDecisionTree(nn.Module):
     
     def train_irm(self,envs,epoch,print_progress=True,return_stats=False,
                   penalty_weight=100,penalty_anneal_iters=50,depth_discount_factor=2,
-                  l1_weight_feat=10,l1_weight_tree=10,max_one_weight=0):
+                  l1_weight_feat=10,l1_weight_tree=10,max_one_weight=0,phi_clip_val=None,grad_clip_val=None):
         """
         We expect envs to be a list of data loaders, each one corresponding to a different environment.
         One training loop involves taking the first batch from each environment (dataloader), computing losses, updating 
@@ -304,6 +301,14 @@ class SoftDecisionTree(nn.Module):
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
+            grad_norm = 0.
+            with torch.no_grad():
+                grad_norm += nn.utils.clip_grad_norm_(self.parameters(),float('inf'),norm_type=2)
+                if phi_clip_val!=None:
+                    list(self.phi.parameters())[-1].data.clamp_(0,phi_clip_val)
+                if grad_clip_val!=None:
+                    nn.utils.clip_grad_norm_(self.parameters(),grad_clip_val)
+
             pred = output.data.max(1)[1].to(self.args.device) # get the index of the max log-probability
             correct = (pred==target).cpu().sum()
             accuracy = 100. * correct / batch_size
@@ -315,7 +320,7 @@ class SoftDecisionTree(nn.Module):
                     num_data_processed = batch_idx*num_envs*batch_size
                     total_data = num_envs*batch_size*NUM_BATCHES
                     #formatted_accuracy = "%, ".join(list(map(lambda acc: f"{acc.item():.2f}",accuracy)))
-                    print(f"""Train Epoch: {epoch} [{num_data_processed}/{total_data} ({100.*batch_idx/NUM_BATCHES:.0f}%)]\t Train Loss: {train_loss.data.item():.4f}, Avg Penalty: {avg_penalty.data.item():.4f}, L1 Feat Loss: {(l1_weight_feat*l1_loss_feat).data.item():.2f}, L1 Tree Loss: {(l1_weight_tree*l1_loss_tree).data.item():.2f}, Accuracy: {correct.sum().item()}/{batch_size*num_envs} ({100.*correct.sum().item()/(batch_size*num_envs):.2f})% Time Elapsed:{end_time-start_time:.2f}s""")
+                    print(f"""Train Epoch: {epoch} [{num_data_processed}/{total_data} ({100.*batch_idx/NUM_BATCHES:.0f}%)]\t Train Loss: {train_loss.data.item():.4f}, Avg Penalty: {avg_penalty.data.item():.4f}, L1 Feat Loss: {(l1_weight_feat*l1_loss_feat).data.item():.2f}, L1 Tree Loss: {(l1_weight_tree*l1_loss_tree).data.item():.2f}, Accuracy: {correct.sum().item()}/{batch_size*num_envs} ({100.*correct.sum().item()/(batch_size*num_envs):.2f})% Time Elapsed:{end_time-start_time:.2f}s, Grad Norm: {grad_norm:.2f}""")
                     start_time = time.time()
         if return_stats:
             return {'loss':loss, 'acc':accuracy}
