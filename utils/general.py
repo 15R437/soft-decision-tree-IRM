@@ -5,7 +5,7 @@ import math
 
 class SoftTreeArgs():
     def __init__(self,input_dim,output_dim,
-                 batch_size=16,device='mps',lmbda=0.1,max_depth=3,lr=0.001,momentum=0.1,log_interval=1,phi=None):
+                 batch_size=16,device='mps',lmbda=0.1,max_depth=3,lr=0.001,momentum=0.1,log_interval=1,phi=None,init_weights=None):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.batch_size = batch_size
@@ -15,6 +15,7 @@ class SoftTreeArgs():
         self.lr = lr
         self.momentum = momentum
         self.log_interval = log_interval
+        self.init_weights = init_weights
         if phi == None:
             self.phi = FeatureMask(input_dim)
         else:

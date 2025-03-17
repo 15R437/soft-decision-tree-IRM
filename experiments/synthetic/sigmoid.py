@@ -15,9 +15,10 @@ from generate_data import generate_and_save,func_sigmoid
 from utils.general import FeatureMask
 
 #LOADING DATA
+LOAD_NEW_DATA = False
 curr_dir = os.path.dirname(os.path.abspath(__file__))
 file_path = os.path.join(curr_dir,"data/sigmoid_data.pickle")
-if os.path.exists(file_path):
+if os.path.exists(file_path) and not LOAD_NEW_DATA:
     print("loading existing data..")
     with open(file_path,'rb') as file:
         x_axis,sigmoid_weights,train_data_list,test_data_list,best_params_list = pickle.load(file)
@@ -35,13 +36,14 @@ else:
         'lmbda': [0.1],
         'depth_discount_factor': [1]}
     
-    x_axis = [k for k in range(10)]
+    x_axis = np.linspace(0,2,11)
     sigmoid_weights = [(k*torch.tensor([2.,-2.]),k*torch.tensor(-1.)) for k in x_axis]
+    spurious_sigmoid_param = (torch.tensor(2.),torch.tensor(-1.))
     train_data_list,test_data_list,best_params_list = [],[],[]
 
     for w,b in sigmoid_weights:
         train_data,test_data,best_params = generate_and_save(n_train_samples=10000,n_test_samples=1000,train_envs=train_envs,test_envs=test_envs,
-          y_func=func_sigmoid(w,b),param_grid=param_grid,save_as=None,batch_size=1000,random_seed=0)
+          y_func=func_sigmoid(w,b),param_grid=param_grid,save_as=None,batch_size=1000,random_seed=0,spurious_sigmoid_param=spurious_sigmoid_param,tune=False)
         
         train_data_list.append(train_data)
         test_data_list.append(test_data)
@@ -65,12 +67,19 @@ def experiment(num_trials):
 
         test_loader = test_data['erm_loader']
         X_test_raw,y_test_raw = test_data['raw_data']
+        if best_params == None:
+            best_lr = 0.1
+            best_l1_feat = 100
+            best_l1_tree = 10
+            best_penalty_weight = 1
+            best_penalty_anneal = 10
+        else:
+            best_lr = best_params['lr'] #0.1
+            best_l1_feat = best_params['l1_weight_feat'] #100
+            best_l1_tree = best_params['l1_weight_tree'] #10
+            best_penalty_weight = best_params['penalty_weight'] #1
+            best_penalty_anneal = best_params['penalty_anneal_iters'] #95
 
-        best_lr = best_params['lr'] #0.1
-        best_l1_feat = best_params['l1_weight_feat'] #100
-        best_l1_tree = best_params['l1_weight_tree'] #10
-        best_penalty_weight = best_params['penalty_weight'] #1
-        best_penalty_anneal = best_params['penalty_anneal_iters'] #95
         tree_args = SoftTreeArgs(input_dim=3,output_dim=2,batch_size=1000,lr=best_lr,max_depth=3,log_interval=1)
 
             

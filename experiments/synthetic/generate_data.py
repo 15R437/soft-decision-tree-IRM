@@ -46,7 +46,7 @@ def func_sigmoid(w,b):
         return torch_bernoulli(torch.sigmoid(x@w+b).view(-1))
     return sigmoid
 
-def make_environments(n_samples:int,e_list:list,y_func,scaler=MinMaxScaler(),batch_size=None,random_seed=None):
+def make_environments(n_samples:int,e_list:list,y_func,scaler=MinMaxScaler(),batch_size=None,random_seed=None,spurious_sigmoid_param=None):
     """we initialise a spurious variable x[2] = y and then flip its value w.p. e where 
     e defines the environment. x[0] is sampled uniformly from [0,1) and x[1] ~ Bernoulli(1-x[0]).
 
@@ -71,7 +71,13 @@ def make_environments(n_samples:int,e_list:list,y_func,scaler=MinMaxScaler(),bat
         x_0 =  torch.rand(n_samples,1)
         x_1 = torch_bernoulli(1-x_0)
         y = torch.cat([y_func(x) for x in torch.cat([x_0,x_1],dim=1)],dim=0)
-        x_2 = (y-torch_bernoulli(e,size=y.size()[0])).abs().view(-1,1)
+        if spurious_sigmoid_param==None:
+            x_2 = (y-torch_bernoulli(e,size=y.size()[0])).abs().view(-1,1)
+        else:
+            w,b = spurious_sigmoid_param
+            w,b = (2*e-1)*w,(2*e-1)*b
+            x_2 = torch.cat([func_sigmoid(w,b)(y_.float()) for y_ in y]).view(-1,1)
+
         if scaler==None:
             X = torch.cat([x_0,x_1,x_2],dim=1)
         else:
@@ -87,15 +93,18 @@ def make_environments(n_samples:int,e_list:list,y_func,scaler=MinMaxScaler(),bat
 
     return {'irm_envs':envs, 'erm_loader':erm_loader, 'raw_data':(np.array(X_),np.array(y_))}
 
-def generate_and_save(n_train_samples,n_test_samples,train_envs,test_envs,y_func,param_grid={},save_as=None,batch_size=None,random_seed=None):
-    train_data = make_environments(n_samples=n_train_samples,e_list=train_envs,y_func=y_func,batch_size=batch_size,random_seed=random_seed)
-    test_data = make_environments(n_samples=n_test_samples,e_list=test_envs,y_func=y_func,batch_size=batch_size,random_seed=None) #test data is random
+def generate_and_save(n_train_samples,n_test_samples,train_envs,test_envs,y_func,param_grid={},save_as=None,tune=True,batch_size=None,random_seed=None,spurious_sigmoid_param=None):
+    train_data = make_environments(n_samples=n_train_samples,e_list=train_envs,y_func=y_func,batch_size=batch_size,random_seed=random_seed,spurious_sigmoid_param=spurious_sigmoid_param)
+    test_data = make_environments(n_samples=n_test_samples,e_list=test_envs,y_func=y_func,batch_size=batch_size,random_seed=None,spurious_sigmoid_param=spurious_sigmoid_param) #test data is random
 
     train_data_irm = train_data['irm_envs']
 
     #hyperparemeter tuning
-    data_object = tuning.DataObject(train_data_irm)
-    best_params = tuning.tune(3,2,data_object,param_grid,k=3)
+    if tune:
+        data_object = tuning.DataObject(train_data_irm)
+        best_params = tuning.tune(3,2,data_object,param_grid,k=3)
+    else:
+        best_params = None
 
     train_test_tune_data = (train_data,test_data,best_params)
     if save_as==None:

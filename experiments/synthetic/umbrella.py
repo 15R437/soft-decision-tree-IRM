@@ -12,7 +12,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 import pickle
 from generate_data import generate_and_save,func_stochastic,func_sigmoid
-from utils.general import FeatureMask
+from utils.general import FeatureMask, decision_tree_penalty
 
 #LOADING DATA
 curr_dir = os.path.dirname(os.path.abspath(__file__))
@@ -188,10 +188,34 @@ def experiment_3(num_trials,anneal_list=[i for i in range(0,110,10)],num_epochs=
     plt.show()
     return mean_accuracy
 
+#EXPERIMENT 4: Fix the weights of the soft tree to their ideal weights. Let phi = (1,1,c) and vary c from 0 to 1. For each value of c,
+#fit a hard tree and compute the decision tree penalty between this hard tree and the soft tree over phi
+def experiment_4(c_list):
+    init_tree_weights = {}
+    for i in range(15):
+        pass
+    penalty = []
+    for c in c_list:
+        phi = FeatureMask(input_dim=3,init_weight=nn.Parameter(torch.tensor([1.,1.,c*1.])))
+        tree_args = SoftTreeArgs(input_dim=3,output_dim=2,batch_size=1000,lr=best_lr,max_depth=3,log_interval=1,phi=phi,
+                                 init_weights=init_tree_weights)
+        soft_tree = SoftDecisionTree(tree_args)
+        penalty.append(decision_tree_penalty(soft_tree,X_train_raw,y_train_raw).item())
+    
+    plt.plot(c_list,penalty)
+    plt.xlabel('c')
+    plt.ylabel('penalty')
+
+    plot_file_path = os.path.join(curr_dir,'plots/umbrella-experiment-4')
+    plt.savefig(plot_file_path)
+    plt.show()
+
+    plt.show()
 
 #RUN EXPERIMENTS HERE
 #experiment_1(10)
-experiment_2(10,init_weights=[torch.tensor([.5,.5,.5]),torch.tensor([0.,0.,0.]),torch.tensor([1.,1.,1.])])
+#experiment_2(10,init_weights=[torch.tensor([.5,.5,.5]),torch.tensor([0.,0.,0.]),torch.tensor([1.,1.,1.])])
 #experiment_3(10)
+experiment_4(c_list=np.linspace(0,1,11))
 
 #PLOT GRAPHS HERE

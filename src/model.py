@@ -25,9 +25,13 @@ from utils.general import decision_tree_penalty
 
 class InnerNode():
 
-    def __init__(self, depth, args):
+    def __init__(self, depth, args, pos):
         self.args = args
-        self.fc = nn.Linear(self.args.input_dim, 1).to(self.args.device)
+        self.pos = pos
+        if self.args.init_weights == None:
+            self.fc = nn.Linear(self.args.input_dim, 1).to(self.args.device)
+        else:
+            self.fc = self.args.init_weights[pos]
         beta = torch.randn(1).to(self.args.device)
         #beta = beta.expand((self.args.batch_size, 1))
         self.beta = nn.Parameter(beta)
@@ -46,8 +50,8 @@ class InnerNode():
 
     def build_child(self, depth):
         if depth < self.args.max_depth:
-            self.left = InnerNode(depth+1, self.args)
-            self.right = InnerNode(depth+1, self.args)
+            self.left = InnerNode(depth+1, self.args,2*self.pos+1)
+            self.right = InnerNode(depth+1, self.args,2*self.pos+2)
         else :
             self.left = LeafNode(self.args)
             self.right = LeafNode(self.args)
@@ -108,7 +112,7 @@ class SoftDecisionTree(nn.Module):
     def __init__(self, args):
         super(SoftDecisionTree, self).__init__()
         self.args = args
-        self.root = InnerNode(1, self.args)
+        self.root = InnerNode(1, self.args,0)
         try:
             self.phi = self.args.phi.to(self.args.device)
         except:
@@ -239,36 +243,44 @@ class SoftDecisionTree(nn.Module):
         self.define_extras(self.args.batch_size)
         NUM_BATCHES = min([len(e) for e in envs])
         num_envs = len(envs)
+        start_time = time.time()
         for batch_idx in range(1,NUM_BATCHES+1):
-            for id,e in enumerate(envs):
+            batch_data = []
+            batch_target = []
+            penalty = torch.tensor(0.).to(self.args.device)
+            for e in envs:
                 data,target = next(iter(e))
-                data,target = data.to(self.args.device), target.to(self.args.device)
-                #data = data.view(self.args.batch_size,-1)
-                target = Variable(target)
-                target_ = target.view(-1,1)
-                batch_size = target_.size()[0]
-                data = data.view(batch_size,-1)
-                #convert int target to one-hot vector
-                data = Variable(data)
-                if not batch_size == self.args.batch_size:
-                    self.define_extras(batch_size)
-                self.target_onehot.data.zero_()            
-                self.target_onehot.scatter_(1, target_, 1.)
-                if id==0:
-                    train_loss,output = self.cal_loss(data, self.target_onehot)
-                    all_targets = target.clone().view(1,-1) #each row represents an environment, the columns are the targets
-                else:
-                    new_loss,new_output = self.cal_loss(data, self.target_onehot)
-                    train_loss += new_loss
-                    output = torch.cat([output,new_output],dim=0)
-                    all_targets = torch.cat([all_targets,target.clone().view(1,-1)],dim=0)
+                batch_data.append(data)
+                batch_target.append(target)
                 if epoch > penalty_anneal_iters:
+                    target_ = target.view(-1,1).to(self.args.device)
+                    data = data.to(self.args.device)
+                    batch_size = target_.size()[0]
+                    """if not batch_size == self.args.batch_size:
+                        self.define_extras(batch_size)
+                    self.target_onehot.data.zero_()            
+                    self.target_onehot.scatter_(1, target_, 1.)"""
+                    target_onehot = torch.FloatTensor(batch_size, self.args.output_dim)
+                    target_onehot = Variable(target_onehot).to(self.args.device)
+                    target_onehot.data.zero_()
+                    target_onehot.scatter_(1,target_,1.)
                     data = self.phi(data)
-                    penalty = decision_tree_penalty(self,data,self.target_onehot,depth_discount_factor)
-                    #if penalty_weight>1.0: loss /= penalty_weight
-                else:
-                    penalty=torch.tensor(0.).to(self.args.device)
-            
+                    #import pdb; pdb.set_trace()
+                    penalty += decision_tree_penalty(self,data,target_onehot,depth_discount_factor)
+
+            data = torch.cat(batch_data).to(self.args.device)
+            target = torch.cat(batch_target).to(self.args.device)
+            target = Variable(target)
+            target_ = target.view(-1,1)
+            batch_size = target_.size()[0]
+            data = data.view(batch_size,-1)
+            data = Variable(data)
+            if not batch_size == self.args.batch_size:
+                self.define_extras(batch_size)
+            self.target_onehot.data.zero_()            
+            self.target_onehot.scatter_(1, target_, 1.)
+
+            train_loss,output = self.cal_loss(data,self.target_onehot)            
             #featuriser regularisation
             l1_loss_feat = torch.tensor(0.).to(self.args.device)
             for module in self.phi.layers:
@@ -285,29 +297,29 @@ class SoftDecisionTree(nn.Module):
                 for w in fc.weight:
                     l1_loss_tree += torch.norm(w,p=1)
 
-            avg_train_loss = train_loss/(num_envs)
             avg_penalty = penalty_weight*penalty/(num_envs)
 
-            loss = avg_train_loss + avg_penalty + l1_weight_feat*l1_loss_feat + l1_weight_tree*l1_loss_tree
+            loss = train_loss + avg_penalty + l1_weight_feat*l1_loss_feat + l1_weight_tree*l1_loss_tree
 
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            pred = output.data.max(1)[1].view(num_envs,-1).to(self.args.device) # get the index of the max log-probability
-            try:
-                correct = pred.eq(all_targets.data).cpu().sum(dim=1)
-            except:
-                import pdb; pdb.set_trace()
+            pred = output.data.max(1)[1].to(self.args.device) # get the index of the max log-probability
+            correct = (pred==target).cpu().sum()
             accuracy = 100. * correct / batch_size
-            #import pdb; pdb.set_trace()
+            
+            
             if print_progress:
                 if batch_idx % self.args.log_interval == 0:
+                    end_time = time.time()
                     num_data_processed = batch_idx*num_envs*batch_size
                     total_data = num_envs*batch_size*NUM_BATCHES
                     #formatted_accuracy = "%, ".join(list(map(lambda acc: f"{acc.item():.2f}",accuracy)))
-                    print(f"""Train Epoch: {epoch} [{num_data_processed}/{total_data} ({100.*batch_idx/NUM_BATCHES:.0f}%)]\t Avg Train Loss: {avg_train_loss.data.item():.4f}, Avg Penalty: {avg_penalty.data.item():.4f}, L1 Feat Loss: {(l1_weight_feat*l1_loss_feat).data.item():.2f}, L1 Tree Loss: {(l1_weight_tree*l1_loss_tree).data.item():.2f}, Accuracy: {correct.sum().item()}/{batch_size*num_envs} ({100.*correct.sum().item()/(batch_size*num_envs):.2f})%""")
+                    print(f"""Train Epoch: {epoch} [{num_data_processed}/{total_data} ({100.*batch_idx/NUM_BATCHES:.0f}%)]\t Train Loss: {train_loss.data.item():.4f}, Avg Penalty: {avg_penalty.data.item():.4f}, L1 Feat Loss: {(l1_weight_feat*l1_loss_feat).data.item():.2f}, L1 Tree Loss: {(l1_weight_tree*l1_loss_tree).data.item():.2f}, Accuracy: {correct.sum().item()}/{batch_size*num_envs} ({100.*correct.sum().item()/(batch_size*num_envs):.2f})% Time Elapsed:{end_time-start_time:.2f}s""")
+                    start_time = time.time()
         if return_stats:
             return {'loss':loss, 'acc':accuracy}
+        end_time = time.time()
 
     def test_(self, test_loader,print_result=True,return_acc=False):
         self.eval()
