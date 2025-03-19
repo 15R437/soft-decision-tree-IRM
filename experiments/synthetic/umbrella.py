@@ -12,12 +12,13 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 import pickle
 from generate_data import generate_and_save,func_stochastic,func_sigmoid
-from utils.general import FeatureMask, decision_tree_penalty
+from utils.general import FeatureMask, decision_tree_penalty,new_tree_penalty
 
 #LOADING DATA
+LOAD_NEW_DATA = False
 curr_dir = os.path.dirname(os.path.abspath(__file__))
 file_path = os.path.join(curr_dir,"data/umbrella_data.pickle")
-if os.path.exists(file_path):
+if os.path.exists(file_path) and not LOAD_NEW_DATA:
     print("loading existing data..")
     with open(file_path,'rb') as file:
         train_data,test_data,best_params = pickle.load(file)
@@ -36,7 +37,7 @@ else:
         'depth_discount_factor': [1]}
 
     train_data,test_data,best_params = generate_and_save(n_train_samples=10000,n_test_samples=1000,train_envs=train_envs,test_envs=test_envs,
-          y_func=func_stochastic,param_grid=param_grid,save_as="data/umbrella_data.pickle",batch_size=1000,random_seed=0)
+          y_func=func_stochastic,param_grid=param_grid,save_as="data/umbrella_data.pickle",batch_size=1000,random_seed=0,tune=False)
 
 train_data_irm = train_data['irm_envs']
 train_data_erm = train_data['erm_loader']
@@ -44,12 +45,19 @@ X_train_raw,y_train_raw = train_data['raw_data']
 
 test_loader = test_data['erm_loader']
 X_test_raw,y_test_raw = test_data['raw_data']
+if best_params == None:
+    best_lr = 0.1
+    best_l1_feat = 100
+    best_l1_tree = 10
+    best_penalty_weight = 1
+    best_penalty_anneal = 10
+else:
+    best_lr = best_params['lr'] #0.1
+    best_l1_feat = best_params['l1_weight_feat'] #100
+    best_l1_tree = best_params['l1_weight_tree'] #10
+    best_penalty_weight = best_params['penalty_weight'] #1
+    best_penalty_anneal = best_params['penalty_anneal_iters'] #95
 
-best_lr = best_params['lr'] #0.1
-best_l1_feat = best_params['l1_weight_feat'] #100
-best_l1_tree = best_params['l1_weight_tree'] #10
-best_penalty_weight = best_params['penalty_weight'] #1
-best_penalty_anneal = best_params['penalty_anneal_iters'] #95
 tree_args = SoftTreeArgs(input_dim=3,output_dim=2,batch_size=1000,lr=best_lr,max_depth=3,log_interval=1)
 
 #EXPERIMENT 1: soft tree (irm) vs soft tree (erm) vs hard tree vs random forest test accuracy
@@ -188,28 +196,48 @@ def experiment_3(num_trials,anneal_list=[i for i in range(0,110,10)],num_epochs=
     plt.show()
     return mean_accuracy
 
-#EXPERIMENT 4: Fix the weights of the soft tree to their ideal weights. Let phi = (1,1,c) and vary c from 0 to 1. For each value of c,
-#fit a hard tree and compute the decision tree penalty between this hard tree and the soft tree over phi
-def experiment_4(c_list):
+#EXPERIMENT 4: Fix the weights of the soft tree to their ideal weights. Let phi = {0,1}^(3) be every combination of feature masks.
+#For each choice of phi, fit a hard tree and compute the decision tree penalty between this hard tree and the soft tree over phi
+def experiment_4(phi_weights:list):
     init_tree_weights = {}
-    weight_values = [torch.tensor([0.,1.,0.]),torch.tensor([1.,0.,0.]),None,None,torch.tensor([1.,0.,0.]),None,None,None,None,None,None,None,None,None,None]
+    init_leaf_dist = {}
+    init_beta = {}
+
+    weight_values = [torch.tensor([0.,1.,0.]),torch.tensor([1.,0.,0.]),None,None,torch.tensor([1.,0.,0.]),None,None]             
     bias_values = [torch.tensor(0.),torch.tensor(0.2),None,None,torch.tensor(0.5),None,None,None,None,None,None,None,None,None,None]
-    for pos in range(15):
+    beta_values = [torch.tensor(1.) for _ in range(7)]
+
+    leaf_dist = [torch.tensor([0.,torch.log(torch.tensor(0.1/(1-0.1)))]),torch.tensor([0.,torch.log(torch.tensor(0.1/(1-0.1)))]),torch.tensor([0.,torch.log(torch.tensor(0.6/(1-0.6)))]),torch.tensor([0.,torch.log(torch.tensor(0.9/(1-0.9)))]),
+                 torch.tensor([0.,torch.log(torch.tensor(0.1/(1-0.1)))]),torch.tensor([0.,torch.log(torch.tensor(0.1/(1-0.1)))]),torch.tensor([0.,torch.log(torch.tensor(0.1/(1-0.1)))]),torch.tensor([0.,torch.log(torch.tensor(0.1/(1-0.1)))])]
+    
+    for pos in range(7):
         init_tree_weights[pos] = nn.Linear(3,1)
         if weight_values[pos]!=None:
-            init_tree_weights[pos].weight.data = weight_values[pos].clone()
+            init_tree_weights[pos].weight.data = weight_values[pos].view(1,-1)
             init_tree_weights[pos].bias.data = bias_values[pos].clone()
+        init_beta[pos] = beta_values[pos].clone()
+
+    for pos in range(7,15):
+        init_leaf_dist[pos] = leaf_dist[pos-7].clone() 
 
     penalty = []
-    for c in c_list:
-        phi = FeatureMask(input_dim=3,init_weight=nn.Parameter(torch.tensor([1.,1.,c*1.])))
+    for num,w in enumerate(phi_weights):
+        phi = FeatureMask(input_dim=3,init_weight=w)
         tree_args = SoftTreeArgs(input_dim=3,output_dim=2,batch_size=1000,lr=best_lr,max_depth=3,log_interval=1,phi=phi,
-                                 init_weights=init_tree_weights)
+                                 tree_weights=init_tree_weights,beta=init_beta,leaf_dist=init_leaf_dist,device='cpu',dtype=torch.float)
         soft_tree = SoftDecisionTree(tree_args)
-        penalty.append(decision_tree_penalty(soft_tree,X_train_raw,y_train_raw).item())
+        X = phi(torch.tensor(X_train_raw).to(tree_args.device))[:,:]
+        penalty.append(new_tree_penalty(soft_tree,X,y_train_raw[:],num).item())
     
-    plt.plot(c_list,penalty)
-    plt.xlabel('c')
+    labels = ['(0,0,1)','(0,1,0)','(0,1,1)','(1,0,0)','(1,0,1)','(1,1,0)','(1,1,1)']
+    x = [1.*i for i in range(1,8)]
+    inv_penalty = [penalty[5] for _ in range(7)]
+    plt.scatter(x,penalty,s=50,c='skyblue',alpha=0.5,marker='o')
+    plt.plot(x,inv_penalty,linestyle=':')
+    for i,label in enumerate(labels):
+        plt.annotate(label,(x[i],penalty[i]))
+    plt.xlabel('phi')
+    plt.xticks([])
     plt.ylabel('penalty')
 
     plot_file_path = os.path.join(curr_dir,'plots/umbrella-experiment-4')
@@ -222,6 +250,8 @@ def experiment_4(c_list):
 #experiment_1(10)
 #experiment_2(10,init_weights=[torch.tensor([.5,.5,.5]),torch.tensor([0.,0.,0.]),torch.tensor([1.,1.,1.])])
 #experiment_3(10)
-experiment_4(c_list=np.linspace(0,1,11))
+experiment_4(phi_weights=[torch.tensor([0.,0.,1.]),torch.tensor([0.,1.,0.]),torch.tensor([0.,1.,1.]),
+                          torch.tensor([1.,0.,0.]),torch.tensor([1.,0.,1.]),torch.tensor([1.,1.,0.]),
+                          torch.tensor([1.,1.,1.])])
 
 #PLOT GRAPHS HERE

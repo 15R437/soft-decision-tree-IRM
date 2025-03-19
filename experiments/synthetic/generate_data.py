@@ -69,7 +69,7 @@ def make_environments(n_samples:int,e_list:list,y_func,scaler=MinMaxScaler(),bat
         except:
             raise Exception(f"e should be a list of probabilities. Instead got {e} in position {id}.")
         x_0 =  torch.rand(n_samples,1)
-        x_1 = torch_bernoulli(1-x_0)
+        x_1 = torch_bernoulli(0.5,size=x_0.size()) #changed the Bernoulli parameter from 1-x_0 to a constant p
         y = torch.cat([y_func(x) for x in torch.cat([x_0,x_1],dim=1)],dim=0)
         if spurious_sigmoid_param==None:
             x_2 = (y-torch_bernoulli(e,size=y.size()[0])).abs().view(-1,1)

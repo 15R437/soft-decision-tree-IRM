@@ -5,7 +5,7 @@ import math
 
 class SoftTreeArgs():
     def __init__(self,input_dim,output_dim,
-                 batch_size=16,device='mps',lmbda=0.1,max_depth=3,lr=0.001,momentum=0.1,log_interval=1,phi=None,init_weights=None):
+                 batch_size=16,device='mps',lmbda=0.1,max_depth=3,lr=0.001,momentum=0.1,log_interval=1,phi=None,tree_weights=None,beta=None,leaf_dist=None,dtype=torch.float16):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.batch_size = batch_size
@@ -15,7 +15,10 @@ class SoftTreeArgs():
         self.lr = lr
         self.momentum = momentum
         self.log_interval = log_interval
-        self.init_weights = init_weights
+        self.tree_weights = tree_weights
+        self.beta = beta
+        self.leaf_dist = leaf_dist
+        self.dtype=dtype
         if phi == None:
             self.phi = FeatureMask(input_dim)
         else:
@@ -87,16 +90,13 @@ def decision_tree_penalty(soft_tree, X, y, depth_discount_factor=1):
     the L2 distance between the non-dummy weightsbetween this optimal tree and soft_tree. """
     tree_classifier = DecisionTreeClassifier(max_depth=soft_tree.args.max_depth,random_state=0) #important to fix random state so in the case where features tie, we always get the same tree structure.
     if type(X) == torch.Tensor:
-        X_ = X.detach().cpu().numpy()
+        X = X.detach().cpu().numpy()
     if type(y) == torch.Tensor:
-        y_  = y.detach().cpu().numpy()
+        y  = y.detach().cpu().numpy()
     
     num_features = X.shape[1]
-    tree_classifier.fit(X_,y_)
-    try:
-        padded_tree = add_dummy_nodes(tree_classifier)
-    except:
-        import pdb; pdb.set_trace()
+    tree_classifier.fit(X,y)
+    padded_tree = add_dummy_nodes(tree_classifier)
 
     W_opt = [] #the optimal coefficients at each node according to tree_classifier
     W = [] #the coefficients of soft_tree collected at those nodes which exist in tree_classifier
@@ -109,8 +109,11 @@ def decision_tree_penalty(soft_tree, X, y, depth_discount_factor=1):
             continue
         W_opt.append(torch.tensor([1. if i==padded_tree.feature[node] else 0. for i in range(num_features)]
                       + [-padded_tree.threshold[node]]).float())
-        W.append(torch.cat([soft_tree.module_list[node].weight,
-                  + soft_tree.module_list[node].bias.view(-1,1)],dim=1)[0])
+        try:
+            W.append(torch.cat([soft_tree.module_list[node].weight.view(1,-1),
+                  + soft_tree.module_list[node].bias.view(1,1)],dim=1)[0])
+        except:
+            import pdb; pdb.set_trace()
         
         discount.append(torch.tensor(depth_discount_factor**(-math.floor(math.log(node+1,2)))).to(soft_tree.args.device))
 
@@ -120,12 +123,26 @@ def decision_tree_penalty(soft_tree, X, y, depth_discount_factor=1):
 
     return torch.mean(torch.stack(discount)*l2_dist)
 
-def max_one_regularisation(weights):
-    """Encourages one-hot or near-one-hot vectors."""
-    loss = torch.tensor(0.).to(weights.device)
-    for w in weights: #iterate over all rows
-        abs_w = torch.abs(w)
-        max_val = torch.max(abs_w)
-        loss += torch.sum((abs_w - max_val)**2) # Penalise differences from the maximum value
-        loss += torch.abs(torch.sum(abs_w) -1 ) # Penalise if sum of absolute value is not 1
+def new_tree_penalty(soft_tree,X,y,num):
+    """this computes an optimal hard decision tree given data and target and then computes
+    the soft_tree loss (over X) wrt target values computed from the hard tree. """
+    tree_classifier = DecisionTreeClassifier(max_depth=soft_tree.args.max_depth,random_state=0) #important to fix random state so in the case where features tie, we always get the same tree structure.
+    if type(X) == torch.Tensor:
+        X = X.detach().cpu().numpy()
+    if type(y) == torch.Tensor:
+        y  = y.detach().cpu().numpy()
+    
+    tree_classifier.fit(X,y)
+    y_pred = tree_classifier.predict_proba(X)
+    if num==5:
+        #import pdb; pdb.set_trace()
+        pass
+    X = torch.tensor(X).to(soft_tree.args.device)
+    y = torch.tensor(y_pred).to(soft_tree.args.device)
+    batch_size = y.shape[0]
+    if not batch_size == soft_tree.args.batch_size:
+        soft_tree.define_extras(batch_size)
+    loss,output,C = soft_tree.cal_loss(X,y,include_featuriser=False)
+    #TQ = torch.bmm(y.clone().view(batch_size, 1, soft_tree.args.output_dim).to(output.dtype), torch.log(output).clone().view(batch_size, soft_tree.args.output_dim, 1)).view(-1,1)
+    #max_nll_loss = torch.mean(-1.*TQ)
     return loss

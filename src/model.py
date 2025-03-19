@@ -23,17 +23,26 @@ from utils.general import decision_tree_penalty
         #error handling - make sure size of w is consistent with size
         self.weight=nn.Parameter(w)"""
 
+def assign_init_value(pos,init_val=None):
+    if init_val!= None:
+        try:
+            assert init_val[pos]!=None
+            return init_val[pos]
+        except:
+            pass
+    return None
+
 class InnerNode():
 
     def __init__(self, depth, args, pos):
         self.args = args
         self.pos = pos
-        if self.args.init_weights == None:
+        self.fc = assign_init_value(pos,self.args.tree_weights).to(self.args.device)
+        if self.fc == None:
             self.fc = nn.Linear(self.args.input_dim, 1).to(self.args.device)
-        else:
-            self.fc = self.args.init_weights[pos].to(self.args.device)
-        beta = torch.randn(1).to(self.args.device)
-        #beta = beta.expand((self.args.batch_size, 1))
+        beta = assign_init_value(pos,self.args.beta).to(self.args.device)
+        if beta == None:
+            beta = torch.randn(1).to(self.args.device)
         self.beta = nn.Parameter(beta)
         self.leaf = False
         self.prob = None
@@ -53,8 +62,8 @@ class InnerNode():
             self.left = InnerNode(depth+1, self.args,2*self.pos+1)
             self.right = InnerNode(depth+1, self.args,2*self.pos+2)
         else :
-            self.left = LeafNode(self.args)
-            self.right = LeafNode(self.args)
+            self.left = LeafNode(self.args,2*self.pos+1)
+            self.right = LeafNode(self.args,2*self.pos+2)
 
     def forward(self, x):
         return(F.sigmoid(self.beta*self.fc(x)))
@@ -87,10 +96,13 @@ class InnerNode():
 
 
 class LeafNode():
-    def __init__(self, args):
+    def __init__(self, args, pos):
         self.args = args
-        self.param = torch.randn(self.args.output_dim).to(self.args.device)
-        self.param = nn.Parameter(self.param)
+        param = assign_init_value(pos,self.args.leaf_dist).to(self.args.device)
+        if param == None:
+            param = torch.randn(self.args.output_dim).to(self.args.device)
+        
+        self.param = nn.Parameter(param)
         self.leaf = True
         self.softmax = nn.Softmax(dim=1)
 
@@ -140,13 +152,13 @@ class SoftDecisionTree(nn.Module):
         batch_size = y.size()[0]
         if include_featuriser: 
             x = self.phi(x)
-
+        
         leaf_accumulator = self.root.cal_prob(x, self.path_prob_init)
         loss = 0.
         max_prob = [-1. for _ in range(batch_size)]
         max_Q = [torch.zeros(self.args.output_dim) for _ in range(batch_size)]
         for (path_prob, Q) in leaf_accumulator:
-            TQ = torch.bmm(y.clone().view(batch_size, 1, self.args.output_dim), torch.log(Q).clone().view(batch_size, self.args.output_dim, 1)).view(-1,1)
+            TQ = torch.bmm(y.clone().view(batch_size, 1, self.args.output_dim).to(Q.dtype), torch.log(Q).clone().view(batch_size, self.args.output_dim, 1)).view(-1,1)
             loss += path_prob * TQ
             path_prob_numpy = path_prob.cpu().data.numpy().reshape(-1)
             for i in range(batch_size):
@@ -160,7 +172,7 @@ class SoftDecisionTree(nn.Module):
             C -= lmbda * 0.5 *(torch.log(penalty) + torch.log(1-penalty))
         output = torch.stack(max_Q)
         self.root.reset() ##reset all stacked calculation
-        return(-loss + C, output) ## -log(loss) will always output non, because loss is always below zero. I suspect this is the mistake of the paper?
+        return(-loss, output, C) ## -log(loss) will always output non, because loss is always below zero. I suspect this is the mistake of the paper?
 
     def collect_parameters(self,include_featuriser=True):
         nodes = [self.root]
@@ -201,7 +213,8 @@ class SoftDecisionTree(nn.Module):
             self.target_onehot.scatter_(1, target_, 1.)
             self.optimizer.zero_grad()
             
-            loss, output = self.cal_loss(data, self.target_onehot,include_featuriser=False)
+            loss, output,C = self.cal_loss(data, self.target_onehot,include_featuriser=False)
+            loss = loss+C
             l1_loss = torch.tensor(0.).to(self.args.device)
             for fc in self.module_list:
                 for w in fc.weight:
@@ -277,7 +290,8 @@ class SoftDecisionTree(nn.Module):
             self.target_onehot.data.zero_()            
             self.target_onehot.scatter_(1, target_, 1.)
 
-            train_loss,output = self.cal_loss(data,self.target_onehot)            
+            train_loss,output,C = self.cal_loss(data,self.target_onehot)
+            train_loss+= C            
             #featuriser regularisation
             l1_loss_feat = torch.tensor(0.).to(self.args.device)
             for module in self.phi.layers:
@@ -343,7 +357,7 @@ class SoftDecisionTree(nn.Module):
                 self.define_extras(batch_size)
             self.target_onehot.data.zero_()            
             self.target_onehot.scatter_(1, target_, 1.)
-            _, output = self.cal_loss(data, self.target_onehot)
+            _, output,C = self.cal_loss(data, self.target_onehot)
             pred = output.data.max(1)[1] # get the index of the max log-probability
             correct += pred.eq(target.data).cpu().sum()
         accuracy = 100. * correct / len(test_loader.dataset)
