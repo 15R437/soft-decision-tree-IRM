@@ -123,7 +123,7 @@ def decision_tree_penalty(soft_tree, X, y, depth_discount_factor=1):
 
     return torch.mean(torch.stack(discount)*l2_dist)
 
-def new_tree_penalty(soft_tree,X,y,num):
+def new_tree_penalty(soft_tree,X,y):
     """this computes an optimal hard decision tree given data and target and then computes
     the soft_tree loss (over X) wrt target values computed from the hard tree. """
     tree_classifier = DecisionTreeClassifier(max_depth=soft_tree.args.max_depth,random_state=0) #important to fix random state so in the case where features tie, we always get the same tree structure.
@@ -134,15 +134,14 @@ def new_tree_penalty(soft_tree,X,y,num):
     
     tree_classifier.fit(X,y)
     y_pred = tree_classifier.predict_proba(X)
-    if num==5:
-        #import pdb; pdb.set_trace()
-        pass
     X = torch.tensor(X).to(soft_tree.args.device)
-    y = torch.tensor(y_pred).to(soft_tree.args.device)
+    y = torch.tensor(y_pred,dtype=torch.float32).to(soft_tree.args.device)
     batch_size = y.shape[0]
-    if not batch_size == soft_tree.args.batch_size:
-        soft_tree.define_extras(batch_size)
-    loss,output,C = soft_tree.cal_loss(X,y,include_featuriser=False)
+    soft_tree.define_extras(batch_size)
+    try:
+        loss,output,C = soft_tree.cal_loss(X,y,include_featuriser=False)
+    except:
+        import pdb; pdb.set_trace()
     #TQ = torch.bmm(y.clone().view(batch_size, 1, soft_tree.args.output_dim).to(output.dtype), torch.log(output).clone().view(batch_size, soft_tree.args.output_dim, 1)).view(-1,1)
     #max_nll_loss = torch.mean(-1.*TQ)
     return loss

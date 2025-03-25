@@ -58,7 +58,7 @@ class DataObject():
             raise Exception(f"""Expected either a Pytorch DataLoader object or a list of Pytorch DataLoader objects.
                              Instead got {type(data)}""")
 
-def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,phi=None,scaler=MinMaxScaler(),k=5):
+def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,phi=None,scaler=MinMaxScaler(),k=5,phi_clip_val=None):
     if scaler==None:
         X_train_scaled = data_object.X
     else:
@@ -114,7 +114,7 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,phi=None,sc
                 soft_tree = SoftDecisionTree(tree_args)
                 for epoch in range(1,num_epochs+1):
                     soft_tree.train_irm(envs,epoch,print_progress=False,return_stats=False,penalty_weight=penalty_weight,penalty_anneal_iters=penalty_anneal_iters,
-                                         l1_weight_feat=l1_weight_feat,l1_weight_tree=l1_weight_tree,depth_discount_factor=depth_discount_factor)
+                                         l1_weight_feat=l1_weight_feat,l1_weight_tree=l1_weight_tree,depth_discount_factor=depth_discount_factor,phi_clip_val=phi_clip_val)
                 
                 num_envs,num_data = y_val_fold.shape
                 target_one_hot = torch.zeros(num_envs*num_data,tree_args.output_dim).to(soft_tree.args.device)
@@ -126,8 +126,8 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,phi=None,sc
                 if not batch_size == soft_tree.args.batch_size:
                     soft_tree.define_extras(batch_size)
 
-                _,output = soft_tree.cal_loss(data,target_one_hot)
-                pred = output.data.max(1)[1] # get the index of the max log-probability
+                _,output,C = soft_tree.cal_loss(data,target_one_hot)
+                pred = output.data.max(1)[1].to(soft_tree.args.device) # get the index of the max log-probability
                 correct = pred.eq(target).cpu().sum()
                 accuracy = 100. * correct / len(data)
                 cv_scores.append(accuracy)
@@ -135,13 +135,17 @@ def tune(input_dim,output_dim,data_object:DataObject,param_grid:dict,phi=None,sc
             elif data_object.training_type=='erm':
                 pass
         
-        mean_cv_score = np.mean(cv_scores)
-        if mean_cv_score > best_acc:  # Assuming minimizing a loss
-            best_acc = mean_cv_score
+        worst_acc = np.min(cv_scores) #changed from mean to min
+        if worst_acc > best_acc: 
+            best_acc = worst_acc
             best_params = params
             NewBest = True
         
-        print(f"""{penalty_anneal_iters} \t \t \t {penalty_weight} \t \t \t {l1_weight_feat} \t \t \t {l1_weight_tree} \t \t \t {mean_cv_score:.2f}% \t \t  {str(NewBest)} """)
+        print(f"""{penalty_anneal_iters} \t \t \t {penalty_weight} \t \t \t {l1_weight_feat} \t \t \t {l1_weight_tree} \t \t \t {worst_acc:.2f}% \t \t  {str(NewBest)} """)
     
     print(f"Best Parameters: {best_params}")
     return best_params
+
+if __name__=="__main__":
+    
+    pass

@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-from utils.general import decision_tree_penalty
+from utils.general import decision_tree_penalty,new_tree_penalty
 
 """class UpperTriangularWeight(nn.Module):
     def __init__(self, size):
@@ -37,13 +37,14 @@ class InnerNode():
     def __init__(self, depth, args, pos):
         self.args = args
         self.pos = pos
-        self.fc = assign_init_value(pos,self.args.tree_weights).to(self.args.device)
+        self.fc = assign_init_value(pos,self.args.tree_weights)
         if self.fc == None:
-            self.fc = nn.Linear(self.args.input_dim, 1).to(self.args.device)
-        beta = assign_init_value(pos,self.args.beta).to(self.args.device)
+            self.fc = nn.Linear(self.args.input_dim, 1)
+        self.fc =self.fc.to(self.args.device)
+        beta = assign_init_value(pos,self.args.beta)
         if beta == None:
             beta = torch.randn(1).to(self.args.device)
-        self.beta = nn.Parameter(beta)
+        self.beta = nn.Parameter(beta).to(self.args.device)
         self.leaf = False
         self.prob = None
         self.leaf_accumulator = []
@@ -98,11 +99,11 @@ class InnerNode():
 class LeafNode():
     def __init__(self, args, pos):
         self.args = args
-        param = assign_init_value(pos,self.args.leaf_dist).to(self.args.device)
+        param = assign_init_value(pos,self.args.leaf_dist)
         if param == None:
-            param = torch.randn(self.args.output_dim).to(self.args.device)
+            param = torch.randn(self.args.output_dim)
         
-        self.param = nn.Parameter(param)
+        self.param = nn.Parameter(param).to(self.args.device)
         self.leaf = True
         self.softmax = nn.Softmax(dim=1)
 
@@ -276,7 +277,7 @@ class SoftDecisionTree(nn.Module):
                     target_onehot.scatter_(1,target_,1.)
                     data = self.phi(data)
                     #import pdb; pdb.set_trace()
-                    penalty += decision_tree_penalty(self,data,target_onehot,depth_discount_factor)
+                    penalty += new_tree_penalty(self,data,target)
 
             data = torch.cat(batch_data).to(self.args.device)
             target = torch.cat(batch_target).to(self.args.device)
