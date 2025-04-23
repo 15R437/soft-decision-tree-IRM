@@ -25,6 +25,7 @@ if os.path.exists(file_path) and not LOAD_NEW_DATA:
 else:
     print(f"generating new data..")
     train_envs = [0.05,0.1,0.6] #if we bring an umbrella, we are likely to also bring a raincoat
+    val_envs = [0.75]
     test_envs = [0.9] # if we bring an umbrella, we are unlikely to also bring a raincoat
     param_grid = {
         'penalty_anneal_iters': [10,50,90],
@@ -40,13 +41,16 @@ else:
     x_axis = np.array([1/k for k in k_inv[::-1]])
     sigmoid_weights = [((1/k)*torch.tensor([2.,-2.]),(1/k)*torch.tensor(-1.)) for k in x_axis]
     spurious_sigmoid_param = (torch.tensor(2.),torch.tensor(-1.))
-    train_data_list,test_data_list,best_params_list = [],[],[]
+    train_data_list,val_data_list,test_data_list,best_params_list = [],[],[],[]
 
     for w,b in sigmoid_weights:
         train_data,test_data,best_params = generate_and_save(n_train_samples=5000,n_test_samples=1000,train_envs=train_envs,test_envs=test_envs,
           y_func=func_sigmoid(w,b),param_grid=param_grid,save_as=None,batch_size=1000,random_seed=0,spurious_sigmoid_param=spurious_sigmoid_param,tune=False)
+        _,val_data,_ = generate_and_save(n_train_samples=None,n_test_samples=5000,train_envs=train_envs,test_envs=val_envs,
+          y_func=func_sigmoid(w,b),param_grid=param_grid,save_as=None,batch_size=1000,random_seed=0,tune=False)
         
         train_data_list.append(train_data)
+        val_data_list.append(val_data)
         test_data_list.append(test_data)
         best_params_list.append(best_params)
     
@@ -107,8 +111,8 @@ def experiment(num_trials):
                 soft_tree_irm.train_irm(train_data_irm,epoch,penalty_anneal_iters=best_penalty_anneal,l1_weight_feat=best_l1_feat,
                                         l1_weight_tree=best_l1_tree,penalty_weight=best_penalty_weight,phi_clip_val=1.0)
             
-            erm_test_accuracy.append(soft_tree_erm.test_(test_loader,print_result=False,return_acc=True))
-            irm_test_accuracy.append(soft_tree_irm.test_(test_loader,print_result=False,return_acc=True))
+            erm_test_accuracy.append(soft_tree_erm.test_(test_loader,print_result=False,return_stats=True)['acc'])
+            irm_test_accuracy.append(soft_tree_irm.test_(test_loader,print_result=False,return_stats=True)['acc'])
         
         irm_acc.append(np.mean(irm_test_accuracy))
         erm_acc.append(np.mean(erm_test_accuracy))
@@ -131,9 +135,9 @@ def experiment(num_trials):
     plt.show()
 
 #RUN EXPERIMENT HERE
-experiment(1)
+#experiment(1)
 #try irm training for 500 epochs!
-"""file_path = os.path.join(curr_dir,'results/sigmoid-experiment.pickle')
+file_path = os.path.join(curr_dir,'results/sigmoid-experiment.pickle')
 with open(file_path,"rb") as file:
         x_axis,irm_acc,erm_acc,hard_tree_acc,random_forest_acc=pickle.load(file)
 
@@ -143,11 +147,35 @@ plt.plot(x_axis[:-1],erm_acc[:-1],label="soft tree (erm)")
 plt.plot(x_axis[:-1],hard_tree_acc[:-1],label="hard tree")
 plt.plot(x_axis[:-1],random_forest_acc[:-1],label="random forest")
 plt.plot(x_axis[:-1],[50.0 for _ in x_axis[:-1]],linestyle=':',label="random")
-plt.xlabel("k")
+plt.xlabel("relative strength of spurious signal (k)")
 plt.ylabel("test accuracy (%)")
 plt.legend()
 
 plot_file_path = os.path.join(curr_dir,'plots/sigmoid-experiment')
 plt.savefig(plot_file_path)
 plt.show()
-"""
+
+"""def find_best_epoch(min_num=100,max_num=200):
+    tree_args = SoftTreeArgs(input_dim=3,output_dim=2,batch_size=1000,lr=best_lr,max_depth=3,log_interval=1)
+    soft_tree_irm = SoftDecisionTree(tree_args)
+    epoch = 0
+    train_loss = []
+    val_loss = []
+    while epoch < max_num:
+            epoch += 1
+            train_loss.append(soft_tree_irm.train_irm(train_data_irm,epoch,penalty_anneal_iters=best_penalty_anneal,l1_weight_feat=best_l1_feat,
+                                    l1_weight_tree=best_l1_tree,penalty_weight=best_penalty_weight,phi_clip_val=1.,return_stats=True)['loss'].cpu().item())
+            
+            val_loss.append(soft_tree_irm.test_(val_loader,print_result=False,return_stats=True)['loss'].cpu().item())
+    
+    plt.plot([i+1 for i in range(epoch)],train_loss,label='train_loss')
+    plt.plot([i+1 for i in range(epoch)],val_loss,label='val_loss')
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
+    plt.legend()
+    
+    plot_file_path = os.path.join(curr_dir,'plots/training-curve')
+    plt.savefig(plot_file_path)
+    plt.show()
+
+find_best_epoch()"""

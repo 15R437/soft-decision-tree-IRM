@@ -15,7 +15,7 @@ from generate_data import generate_and_save,func_stochastic,func_sigmoid
 from utils.general import FeatureMask, decision_tree_penalty,new_tree_penalty
 
 #LOADING DATA
-LOAD_NEW_DATA = False
+LOAD_NEW_DATA = True
 curr_dir = os.path.dirname(os.path.abspath(__file__))
 file_path = os.path.join(curr_dir,"data/umbrella_data.pickle")
 if os.path.exists(file_path) and not LOAD_NEW_DATA:
@@ -25,6 +25,7 @@ if os.path.exists(file_path) and not LOAD_NEW_DATA:
 else:
     print(f"generating new data..")
     train_envs = [0.05,0.1,0.6] #if we bring an umbrella, we are likely to also bring a raincoat 0.1,0.2,0.3
+    val_envs = [0.75]
     test_envs = [0.9] # if we bring an umbrella, we are unlikely to also bring a raincoat
     param_grid = {
         'penalty_anneal_iters': [10,50,90],
@@ -37,13 +38,16 @@ else:
         'depth_discount_factor': [1]}
 
     train_data,test_data,best_params = generate_and_save(n_train_samples=5000,n_test_samples=1000,train_envs=train_envs,test_envs=test_envs,
-          y_func=func_stochastic,param_grid=param_grid,save_as="data/umbrella_data.pickle",batch_size=1000,random_seed=0,tune=True)
+          y_func=func_stochastic,param_grid=param_grid,save_as="data/umbrella_data.pickle",batch_size=1000,random_seed=0,tune=False)
+    _,val_data,_ = generate_and_save(n_train_samples=None,n_test_samples=5000,train_envs=train_envs,test_envs=val_envs,
+          y_func=func_stochastic,param_grid=param_grid,save_as=None,batch_size=1000,random_seed=0,tune=False)
 
 train_data_irm = train_data['irm_envs']
 train_data_erm = train_data['erm_loader']
 X_train_raw,y_train_raw = train_data['raw_data']
 
 test_loader = test_data['erm_loader']
+val_loader = val_data['erm_loader']
 X_test_raw,y_test_raw = test_data['raw_data']
 #best_params = None
 if best_params == None:
@@ -87,8 +91,8 @@ def experiment_1(num_trials):
             soft_tree_irm.train_irm(train_data_irm,epoch,penalty_anneal_iters=best_penalty_anneal,l1_weight_feat=best_l1_feat,
                                     l1_weight_tree=best_l1_tree,penalty_weight=best_penalty_weight,phi_clip_val=1.)
         
-        erm_test_accuracy.append(soft_tree_erm.test_(test_loader,print_result=False,return_acc=True))
-        irm_test_accuracy.append(soft_tree_irm.test_(test_loader,print_result=False,return_acc=True))
+        erm_test_accuracy.append(soft_tree_erm.test_(test_loader,print_result=False,return_stats=True)['acc'])
+        irm_test_accuracy.append(soft_tree_irm.test_(test_loader,print_result=False,return_stats=True)['acc'])
 
 
 
@@ -150,7 +154,7 @@ def experiment_2(num_trials,init_weights:list,ideal_weight=np.array([1,1,0]),num
 
                 loss[epoch-1].append(nce)
            
-            acc.append(soft_tree_irm.test_(test_loader,print_result=False,return_acc=True))
+            acc.append(soft_tree_irm.test_(test_loader,print_result=False,return_stats=True)['acc'])
 
         weight_loss.append(np.mean(loss,axis=1))
         irm_test_accuracy.append(np.mean(acc))
@@ -182,7 +186,7 @@ def experiment_3(num_trials,anneal_list=[i for i in range(0,110,10)],num_epochs=
                 soft_tree_irm.train_irm(train_data_irm,epoch,penalty_anneal_iters=anneal,l1_weight_feat=best_l1_feat,
                                         l1_weight_tree=best_l1_tree,penalty_weight=best_penalty_weight,print_progress=False)
                 
-            irm_test_accuracy[id].append(soft_tree_irm.test_(test_loader,print_result=False,return_acc=True))
+            irm_test_accuracy[id].append(soft_tree_irm.test_(test_loader,print_result=False,return_stats=True)['acc'])
     
     mean_accuracy = np.mean(irm_test_accuracy,axis=1)
     results_file_path = os.path.join(curr_dir,'results/umbrella-experiment-3.pickle')
@@ -225,12 +229,16 @@ def experiment_4(phi_weights:list):
 
     penalty = []
     for w in phi_weights:
+        env_penalty = 0.
         phi = FeatureMask(input_dim=3,init_weight=w)
         tree_args = SoftTreeArgs(input_dim=3,output_dim=2,batch_size=1000,lr=best_lr,max_depth=3,log_interval=1,phi=phi,
                                  tree_weights=init_tree_weights,beta=init_beta,leaf_dist=init_leaf_dist,device='cpu',dtype=torch.float)
         soft_tree = SoftDecisionTree(tree_args)
-        X = phi(torch.tensor(X_train_raw).to(tree_args.device))[:,:]
-        penalty.append(new_tree_penalty(soft_tree,X,y_train_raw[:]).item())
+        for num in range(0,15000,5000):
+            X = phi(torch.tensor(X_train_raw).to(tree_args.device))[num:num+5000,:]
+            y = y_train_raw[num:num+5000]
+            env_penalty += new_tree_penalty(soft_tree,X,y).item()
+        penalty.append(env_penalty/3)
     
     labels = ['(0,0,0)','(0,0,1)','(0,1,0)','(0,1,1)','(1,0,0)','(1,0,1)','(1,1,0)','(1,1,1)']
     x = [1.*i for i in range(8)]
@@ -249,8 +257,8 @@ def experiment_4(phi_weights:list):
     plt.ylabel('penalty')
 
     plot_file_path = os.path.join(curr_dir,'plots/umbrella-experiment-4')
-    plt.savefig(plot_file_path)
-    plt.show()
+    #plt.savefig(plot_file_path)
+    #plt.show()
 
 #RUN EXPERIMENTS HERE
 #experiment_1(10)
@@ -262,8 +270,42 @@ def experiment_4(phi_weights:list):
                           torch.tensor([1.,1.,0.]),torch.tensor([1.,1.,1.])])"""
 
 #PLOT GRAPHS HERE
-file_path = os.path.join(curr_dir,'results/umbrella-experiment-4.pickle')
+file_path = os.path.join(curr_dir,'results/umbrella-experiment-1.pickle')
 with open(file_path,"rb") as file:
-    labels,penalty = pickle.load(file)
-print(labels)
-print(penalty)
+    results = pickle.load(file)
+
+colours = ['green','red','orange','blue']
+models = results['models']
+acc = results['accuracy']
+plt.bar(models,acc,color=colours)
+plt.title("Umbrella Use Prediction")
+plt.xlabel("model")
+plt.ylabel("test accuracy (%)")
+
+plot_file_path = os.path.join(curr_dir,'plots/umbrella-experiment-1')
+plt.savefig(plot_file_path)
+plt.show()
+
+def find_best_epoch(min_num=100,max_num=200):
+    soft_tree_irm = SoftDecisionTree(tree_args_irm)
+    epoch = 0
+    train_loss = []
+    val_loss = []
+    while epoch < max_num:
+            epoch += 1
+            train_loss.append(soft_tree_irm.train_irm(train_data_irm,epoch,penalty_anneal_iters=best_penalty_anneal,l1_weight_feat=best_l1_feat,
+                                    l1_weight_tree=best_l1_tree,penalty_weight=best_penalty_weight,phi_clip_val=1.,return_stats=True)['loss'].cpu().item())
+            
+            val_loss.append(soft_tree_irm.test_(val_loader,print_result=False,return_stats=True)['loss'].cpu().item())
+    
+    plt.plot([i+1 for i in range(epoch)],train_loss,label='train_loss')
+    plt.plot([i+1 for i in range(epoch)],val_loss,label='val_loss')
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
+    plt.legend()
+    
+    plot_file_path = os.path.join(curr_dir,'plots/training-curve')
+    plt.savefig(plot_file_path)
+    plt.show()
+
+#find_best_epoch()

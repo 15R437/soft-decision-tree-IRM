@@ -255,6 +255,7 @@ class SoftDecisionTree(nn.Module):
         NUM_BATCHES = min([len(e) for e in envs])
         num_envs = len(envs)
         start_time = time.time()
+        total_loss = 0.
         for batch_idx in range(1,NUM_BATCHES+1):
             batch_data = []
             batch_target = []
@@ -292,6 +293,7 @@ class SoftDecisionTree(nn.Module):
             self.target_onehot.scatter_(1, target_, 1.)
 
             train_loss,output,C = self.cal_loss(data,self.target_onehot)
+            total_loss+= train_loss
             train_loss+= C            
             #featuriser regularisation
             l1_loss_feat = torch.tensor(0.).to(self.args.device)
@@ -338,13 +340,13 @@ class SoftDecisionTree(nn.Module):
                     print(f"""Train Epoch: {epoch} [{num_data_processed}/{total_data} ({100.*batch_idx/NUM_BATCHES:.0f}%)]\t Train Loss: {train_loss.data.item():.4f}, Avg Penalty: {avg_penalty.data.item():.4f}, L1 Feat Loss: {(l1_weight_feat*l1_loss_feat).data.item():.2f}, L1 Tree Loss: {(l1_weight_tree*l1_loss_tree).data.item():.2f}, Accuracy: {correct.sum().item()}/{batch_size*num_envs} ({100.*correct.sum().item()/(batch_size*num_envs):.2f})% Time Elapsed:{end_time-start_time:.2f}s, Grad Norm: {grad_norm:.2f}""")
                     start_time = time.time()
         if return_stats:
-            return {'loss':loss, 'acc':accuracy}
+            return {'loss':total_loss/NUM_BATCHES, 'acc':accuracy}
         end_time = time.time()
 
-    def test_(self, test_loader,print_result=True,return_acc=False):
+    def test_(self, test_loader,print_result=True,return_stats=False):
         self.eval()
         self.define_extras(self.args.batch_size)
-        test_loss = 0
+        test_loss = 0.
         correct = 0
         for data, target in test_loader:
             data, target = data.to(self.args.device), target.to(self.args.device)
@@ -358,7 +360,8 @@ class SoftDecisionTree(nn.Module):
                 self.define_extras(batch_size)
             self.target_onehot.data.zero_()            
             self.target_onehot.scatter_(1, target_, 1.)
-            _, output,C = self.cal_loss(data, self.target_onehot)
+            loss, output,C = self.cal_loss(data, self.target_onehot)
+            test_loss+= loss
             pred = output.data.max(1)[1] # get the index of the max log-probability
             correct += pred.eq(target.data).cpu().sum()
         accuracy = 100. * correct / len(test_loader.dataset)
@@ -371,8 +374,8 @@ class SoftDecisionTree(nn.Module):
         if accuracy > self.best_accuracy:
             #self.save_best('./result')
             self.best_accuracy = accuracy
-        if return_acc:
-            return self.best_accuracy
+        if return_stats:
+            return {'loss':test_loss/len(test_loader),'acc':accuracy}
 
     def save_best(self, path):
         try:

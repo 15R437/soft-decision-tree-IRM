@@ -53,6 +53,8 @@ def make_environments(n_samples:int,e_list:list,y_func,scaler=MinMaxScaler(),bat
     These can be interpreted e.g. as x[0] = probability of rain, x[1] = whether or not one cycles to work,
     y = whether or not one brings an umbrella to work and x[2] = whether or not one brings a rain coat.
     """
+    if n_samples == None:
+        return None
     if random_seed==None:
         pass
     else:
@@ -69,7 +71,7 @@ def make_environments(n_samples:int,e_list:list,y_func,scaler=MinMaxScaler(),bat
         except:
             raise Exception(f"e should be a list of probabilities. Instead got {e} in position {id}.")
         x_0 =  torch.rand(n_samples,1)
-        x_1 = torch_bernoulli(0.5,size=x_0.size()) #changed the Bernoulli parameter from 1-x_0 to a constant p
+        x_1 = torch_bernoulli(0.5,size=x_0.size()) #changed the Bernoulli parameter from 1-x_0 to a constant p=.5
         y = torch.cat([y_func(x) for x in torch.cat([x_0,x_1],dim=1)],dim=0)
         if spurious_sigmoid_param==None:
             x_2 = (y-torch_bernoulli(e,size=y.size()[0])).abs().view(-1,1)
@@ -97,7 +99,8 @@ def generate_and_save(n_train_samples,n_test_samples,train_envs,test_envs,y_func
     train_data = make_environments(n_samples=n_train_samples,e_list=train_envs,y_func=y_func,batch_size=batch_size,random_seed=random_seed,spurious_sigmoid_param=spurious_sigmoid_param)
     test_data = make_environments(n_samples=n_test_samples,e_list=test_envs,y_func=y_func,batch_size=batch_size,random_seed=None,spurious_sigmoid_param=spurious_sigmoid_param) #test data is random
 
-    train_data_irm = train_data['irm_envs']
+    if train_data!=None:
+        train_data_irm = train_data['irm_envs']
 
     #hyperparemeter tuning
     if tune:
